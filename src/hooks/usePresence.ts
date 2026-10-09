@@ -7,7 +7,7 @@ import {
   sendHeartbeat,
   type PresenceStatus,
 } from '@/lib/presence';
-import { supabase } from '@/lib/supabase';
+import { supabase, uniqueTopic } from '@/lib/supabase';
 
 /**
  * usePresenceHeartbeat — keeps MY "last active" fresh.
@@ -83,7 +83,7 @@ export function usePartnerPresence(partnerId: string | null): PresenceStatus {
     const poll = setInterval(load, 20_000);
 
     const channel = supabase
-      .channel(`presence-watch-${partnerId}`)
+      .channel(uniqueTopic(`presence-watch-${partnerId}`))
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'presence', filter: `user_id=eq.${partnerId}` },

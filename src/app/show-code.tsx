@@ -41,9 +41,11 @@ export default function ShowCode() {
     await refresh();
   }
 
-  // Generate once when the screen opens, unless we already have a code.
+  // Generate once when the screen opens — but ONLY when we know for sure this
+  // user has no couple yet. While the saved state is still loading (or we're
+  // offline) we wait, so an existing pairing is never replaced by a new code.
   useEffect(() => {
-    if (phase === 'loading' || phase === 'paired' || couple) return;
+    if (phase !== 'unpaired' || couple) return;
     if (startedRef.current) return;
     startedRef.current = true;
     void generate();
@@ -51,7 +53,7 @@ export default function ShowCode() {
   }, [phase, couple]);
 
   // Partner joined → into the app.
-  if (phase === 'paired') return <Redirect href="/(tabs)" />;
+  if (phase === 'paired') return <Redirect href="/name-setup" />;
 
   async function onCopy() {
     if (!couple) return;

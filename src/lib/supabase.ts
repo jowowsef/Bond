@@ -34,6 +34,24 @@ AppState.addEventListener('change', (state) => {
   else supabase.auth.stopAutoRefresh();
 });
 
+let topicCounter = 0;
+
+/**
+ * A fresh Realtime channel name for every subscription.
+ *
+ * Why: supabase.channel(name) hands back the EXISTING channel when one with
+ * the same name is already registered, and removeChannel() is async (it waits
+ * for the server before the channel is dropped). Reusing a fixed name can
+ * therefore return a channel that is already subscribed, and calling .on()
+ * on it throws "cannot add postgres_changes callbacks ... after subscribe()".
+ * A unique name per effect run always gives a brand-new, unsubscribed channel.
+ * (We only use postgres_changes, so the topic name itself has no meaning.)
+ */
+export function uniqueTopic(base: string): string {
+  topicCounter += 1;
+  return `${base}-${topicCounter}`;
+}
+
 /** Turns a Supabase / Postgres error into a friendly sentence. */
 export function errorMessage(error: unknown): string {
   if (!error) return 'Something went wrong.';

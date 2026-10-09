@@ -65,8 +65,9 @@ export async function createCouple(displayName = ''): Promise<PairResult> {
   return { ok: true, couple: data as Couple };
 }
 
-/** Clean up whatever the partner typed into a usable 6-character code. */
+/** Clean up whatever the partner typed into a usable short code. */
 export function normalizeCode(input: string): string {
+  // Tolerate the old "BOND-" prefix and any spaces/dashes people might add.
   return input.toUpperCase().replace(/^BOND[-\s]?/, '').replace(/[^A-Z0-9]/g, '');
 }
 
@@ -90,14 +91,19 @@ export async function unpair(): Promise<{ ok: boolean; message?: string }> {
   return { ok: true };
 }
 
-/** Show the code the way the UI presents it: "BOND-7K4P2". */
+/** Show the code the way the UI presents it: a short code like "K7P4X2". */
 export function displayCode(code: string | null | undefined): string {
-  return code ? `BOND-${code}` : '';
+  return code ? code.toUpperCase() : '';
 }
 
 /** Update just the display name on my profile. */
-export async function updateDisplayName(userId: string, name: string): Promise<void> {
-  await supabase.from('profiles').update({ display_name: name.trim() || 'Me' }).eq('id', userId);
+export async function updateDisplayName(
+  userId: string,
+  name: string,
+): Promise<{ ok: boolean; message?: string }> {
+  const { error } = await supabase.from('profiles').update({ display_name: name.trim() || 'Me' }).eq('id', userId);
+  if (error) return { ok: false, message: friendly(error.message) };
+  return { ok: true };
 }
 
 /** Fetch one profile row (or null). */

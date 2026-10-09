@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { colors, radius } from '@/lib/theme';
+import { colors, fontFamily, radius } from '@/lib/theme';
 
 export type BadgeTone = 'neutral' | 'primary' | 'success' | 'warning' | 'danger' | 'blue';
 
@@ -34,5 +34,5 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   dot: { width: 7, height: 7, borderRadius: 4, marginRight: 6 },
-  text: { fontSize: 12, fontWeight: '700', letterSpacing: 0.2 },
+  text: { fontFamily, fontSize: 12, fontWeight: '700', letterSpacing: 0.2 },
 });

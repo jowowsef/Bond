@@ -10,8 +10,7 @@
  */
 
 export type MockPerson = {
-  screenTime: string;
-  screenFraction: number; // 0..1, used only for the comparison bar
+  screenMinutes: number; // today's total, in minutes
   battery: number;
   charging: boolean;
   locationSharing: boolean;
@@ -23,8 +22,7 @@ export type MockPerson = {
 };
 
 export const MOCK_ME: MockPerson = {
-  screenTime: '2h 14m',
-  screenFraction: 0.42,
+  screenMinutes: 134, // 2h 14m
   battery: 91,
   charging: true,
   locationSharing: false,
@@ -36,8 +34,7 @@ export const MOCK_ME: MockPerson = {
 };
 
 export const MOCK_PARTNER: MockPerson = {
-  screenTime: '3h 28m',
-  screenFraction: 0.58,
+  screenMinutes: 208, // 3h 28m
   battery: 78,
   charging: false,
   locationSharing: true,
@@ -47,6 +44,9 @@ export const MOCK_PARTNER: MockPerson = {
   protectionOn: true,
   lastActive: '1 min ago',
 };
+
+/** Example distance between the two of you, shown when both share location. */
+export const MOCK_DISTANCE_KM = 1.2;
 
 export type MockActivity = {
   id: string;

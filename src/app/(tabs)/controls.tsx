@@ -1,90 +1,95 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
-import { Button } from '@/components/Button';
-import { InfoCard } from '@/components/InfoCard';
+import { StyleSheet, Text, View } from 'react-native';
+import { Card } from '@/components/Card';
+import { GearButton } from '@/components/GearButton';
 import { Screen } from '@/components/Screen';
-import { StatusBadge } from '@/components/StatusBadge';
-import { MOCK_ME, MOCK_PARTNER } from '@/lib/placeholders';
-import { colors, font, spacing } from '@/lib/theme';
-import { useCouple } from '@/state/couple';
+import { colors, font, radius, spacing } from '@/lib/theme';
 
 /**
- * CONTROLS — UI only for this phase.
+ * CONTROLS — honest status for now.
  *
- * Shows what's "active" on each phone (placeholder) and the request/manage
- * buttons. Buttons currently show a short "coming soon" note instead of
- * enforcing anything. No blocking, VPN, or accessibility is implemented yet.
+ * Device protection (website filtering, app limits) needs the native Bond
+ * module that isn't in this build yet. Rather than show fake on/off switches,
+ * we explain how it will work: always mutual and consent-based.
  */
 export default function Controls() {
-  const { myProfile, partnerProfile } = useCouple();
-  const myName = myProfile?.display_name ?? 'You';
-  const partnerName = partnerProfile?.display_name ?? 'Partner';
-
-  const soon = (what: string) =>
-    Alert.alert('Coming soon', `${what} will be available once device protection is added in a later update.`);
-
   return (
-    <Screen title="Controls" subtitle="Help each other build better habits">
-      <InfoCard icon="phone-portrait" title={`${myName} · My phone`} accent={colors.primary} accentBg={colors.primarySoft}>
-        <ControlRow label="Website Protection" on={MOCK_ME.protectionOn} />
-        <ControlRow label="App Restrictions" on={false} last />
-        <Button
-          label="Manage my protection"
-          variant="secondary"
-          icon="options-outline"
-          small
-          onPress={() => soon('Managing your own protection')}
-          style={{ marginTop: spacing.md }}
-        />
-      </InfoCard>
+    <Screen title="Controls" subtitle="Help each other build better habits" right={<GearButton />}>
+      <Card style={styles.hero}>
+        <View style={styles.heroIcon}>
+          <Ionicons name="shield-checkmark-outline" size={26} color={colors.primary} />
+        </View>
+        <Text style={styles.heroTitle}>No active protection yet</Text>
+        <Text style={styles.heroBody}>
+          Website and app protection arrive in a later update. When they do, every control will work the same mutual
+          way requests already do here.
+        </Text>
+      </Card>
 
-      <View style={{ height: spacing.md }} />
-
-      <InfoCard icon="people" title={`${partnerName} · Partner's phone`} accent={colors.blue} accentBg={colors.blueSoft}>
-        <ControlRow label="Website Protection" on={MOCK_PARTNER.protectionOn} />
-        <ControlRow label="App Restrictions" on={false} last />
-        <Button
-          label="Request Protection"
-          icon="shield-outline"
-          small
-          onPress={() => soon('Requesting protection on your partner’s phone')}
-          style={{ marginTop: spacing.md }}
-        />
-      </InfoCard>
+      <View style={styles.steps}>
+        <Step icon="hand-left-outline" title="You request" body="Ask to turn a protection on for your partner's phone — or your own." />
+        <Step icon="checkmark-circle-outline" title="They approve" body="The other person must accept before anything changes on their device." />
+        <Step icon="lock-open-outline" title="Either can turn it off" body="Nobody gets locked out of their own phone. Controls can always be removed." />
+      </View>
 
       <View style={styles.infoBox}>
         <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
         <Text style={styles.infoText}>
-          Every control is mutual and consent-based: you can only <Text style={styles.bold}>request</Text> protection on
-          your partner's phone — they must accept it, and either of you can turn it off anytime.
+          Bond will never grant Android permissions on the other phone for you. Each person sets up their own device.
         </Text>
       </View>
     </Screen>
   );
 }
 
-function ControlRow({ label, on, last }: { label: string; on: boolean; last?: boolean }) {
+function Step({ icon, title, body }: { icon: React.ComponentProps<typeof Ionicons>['name']; title: string; body: string }) {
   return (
-    <View style={[styles.row, !last && styles.divider]}>
-      <Text style={styles.label}>{label}</Text>
-      <StatusBadge label={on ? 'ON' : 'OFF'} tone={on ? 'success' : 'neutral'} dot />
-    </View>
+    <Card style={styles.step}>
+      <View style={styles.stepIcon}>
+        <Ionicons name={icon} size={18} color={colors.primary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.stepTitle}>{title}</Text>
+        <Text style={styles.stepBody}>{body}</Text>
+      </View>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.sm + 2 },
-  divider: { borderBottomWidth: 1, borderBottomColor: colors.border },
-  label: { ...font.body, color: colors.subtext },
+  hero: { alignItems: 'center', paddingVertical: spacing.xl },
+  heroIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  heroTitle: { ...font.h2, color: colors.text },
+  heroBody: { ...font.small, color: colors.subtext, textAlign: 'center', marginTop: spacing.sm, lineHeight: 19 },
+  steps: { marginTop: spacing.lg, gap: spacing.md },
+  step: { flexDirection: 'row', alignItems: 'center' },
+  stepIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  stepTitle: { ...font.h3, color: colors.text },
+  stepBody: { ...font.small, color: colors.subtext, marginTop: 2, lineHeight: 18 },
   infoBox: {
     flexDirection: 'row',
     gap: spacing.sm,
     backgroundColor: colors.primarySoft,
-    borderRadius: 16,
+    borderRadius: radius.lg,
     padding: spacing.lg,
     marginTop: spacing.xl,
   },
   infoText: { ...font.small, color: colors.subtext, flex: 1, lineHeight: 19 },
-  bold: { fontWeight: '800', color: colors.primary },
 });

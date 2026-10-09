@@ -1,61 +1,98 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { Card } from '@/components/Card';
+import { GearButton } from '@/components/GearButton';
 import { Screen } from '@/components/Screen';
-import { MOCK_ACTIVITY, type MockActivity } from '@/lib/placeholders';
+import { activityMessage, activityVisual, useActivityFeed } from '@/hooks/useActivityFeed';
+import { formatDateTime } from '@/lib/format';
 import { colors, font, radius, spacing } from '@/lib/theme';
+import type { ActivityLog } from '@/lib/types';
+import { useCouple } from '@/state/couple';
 
 /**
- * ACTIVITY — a timeline of couple events. Uses placeholder events for now;
- * later it will read the real activity_logs table from Supabase.
+ * ACTIVITY — the couple's real timeline (from activity_logs). Shows proper
+ * loading, empty, and error states instead of mock events.
  */
 export default function Activity() {
+  const { logs, loading, error, reload } = useActivityFeed(50);
+  const { myProfile, partnerProfile } = useCouple();
+  const names = { myName: myProfile?.display_name, partnerName: partnerProfile?.display_name };
+
   return (
-    <Screen title="Activity" subtitle="What's happening between you two">
-      <Card style={{ paddingVertical: spacing.sm }}>
-        {MOCK_ACTIVITY.map((item, i) => (
-          <TimelineRow key={item.id} item={item} last={i === MOCK_ACTIVITY.length - 1} />
-        ))}
-      </Card>
-      <Text style={styles.note}>Example timeline — real events appear here as you use the app.</Text>
+    <Screen
+      title="Activity"
+      subtitle="What's happening between you two"
+      right={<GearButton />}
+      refreshControl={<RefreshControl refreshing={false} onRefresh={reload} tintColor={colors.primary} />}
+    >
+      {loading ? (
+        <Card>
+          <Text style={styles.state}>Loading…</Text>
+        </Card>
+      ) : error ? (
+        <Card>
+          <Text style={styles.state}>Couldn&apos;t load activity. Pull down to try again.</Text>
+        </Card>
+      ) : logs.length === 0 ? (
+        <Card style={styles.emptyCard}>
+          <Ionicons name="pulse-outline" size={28} color={colors.muted} />
+          <Text style={styles.emptyTitle}>No activity yet</Text>
+          <Text style={styles.state}>Requests, approvals, and sharing changes will appear here.</Text>
+        </Card>
+      ) : (
+        <Card style={{ paddingVertical: spacing.sm }}>
+          {logs.map((log, i) => (
+            <TimelineRow key={log.id} log={log} names={names} last={i === logs.length - 1} />
+          ))}
+        </Card>
+      )}
     </Screen>
   );
 }
 
-const TONES: Record<MockActivity['tone'], { bg: string; fg: string }> = {
-  primary: { bg: colors.primarySoft, fg: colors.primary },
-  success: { bg: colors.successSoft, fg: colors.success },
-  blue: { bg: colors.blueSoft, fg: colors.blue },
-  neutral: { bg: colors.border, fg: colors.subtext },
-  warning: { bg: colors.warningSoft, fg: colors.warning },
-};
-
-function TimelineRow({ item, last }: { item: MockActivity; last: boolean }) {
-  const tone = TONES[item.tone];
+function TimelineRow({
+  log,
+  names,
+  last,
+}: {
+  log: ActivityLog;
+  names: { myName?: string | null; partnerName?: string | null };
+  last: boolean;
+}) {
+  const v = activityVisual(log.kind);
   return (
     <View style={styles.row}>
-      <View style={styles.railColumn}>
-        <View style={[styles.dot, { backgroundColor: tone.bg }]}>
-          <Ionicons name={item.icon as React.ComponentProps<typeof Ionicons>['name']} size={16} color={tone.fg} />
+      <View style={styles.rail}>
+        <View style={styles.dot}>
+          <Ionicons name={v.icon as React.ComponentProps<typeof Ionicons>['name']} size={16} color={colors.primary} />
         </View>
         {!last ? <View style={styles.line} /> : null}
       </View>
-      <View style={styles.textCol}>
-        <Text style={styles.title}>{item.title}</Text>
-        <Text style={styles.time}>{item.time}</Text>
+      <View style={styles.rowText}>
+        <Text style={styles.message}>{activityMessage(log, names)}</Text>
+        <Text style={styles.time}>{formatDateTime(log.created_at)}</Text>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  state: { ...font.small, color: colors.muted, lineHeight: 19 },
+  emptyCard: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.xs },
+  emptyTitle: { ...font.h3, color: colors.text, marginTop: spacing.sm },
   row: { flexDirection: 'row' },
-  railColumn: { alignItems: 'center', width: 44 },
-  dot: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  rail: { alignItems: 'center', width: 40 },
+  dot: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   line: { width: 2, flex: 1, backgroundColor: colors.border, marginVertical: 2 },
-  textCol: { flex: 1, paddingVertical: spacing.sm, paddingBottom: spacing.lg, marginLeft: spacing.sm },
-  title: { ...font.h3, fontWeight: '600', color: colors.text },
+  rowText: { flex: 1, paddingVertical: spacing.sm, paddingBottom: spacing.lg, marginLeft: spacing.sm },
+  message: { ...font.body, color: colors.text, lineHeight: 20 },
   time: { ...font.small, color: colors.muted, marginTop: 2 },
-  note: { ...font.small, color: colors.muted, textAlign: 'center', marginTop: spacing.lg },
 });

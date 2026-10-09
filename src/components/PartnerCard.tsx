@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
   },
   person: { alignItems: 'center', flex: 1 },
   heartWrap: { marginHorizontal: 4, marginTop: -28 },
-  heart: { fontSize: 24, color: colors.muted, fontWeight: '300' },
+  heart: { ...font.h2, color: colors.muted, fontWeight: '400' },
   name: { ...font.h3, color: colors.text, marginTop: 10, maxWidth: 130, textAlign: 'center' },
   subtitle: { ...font.small, color: colors.muted },
   statusSlot: { marginTop: 6, minHeight: 18, justifyContent: 'center' },

@@ -1,110 +1,211 @@
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { ApprovalRequestCard } from '@/components/ApprovalRequestCard';
+import { AvatarStack } from '@/components/AvatarStack';
+import { BondLogo } from '@/components/BondLogo';
 import { Card } from '@/components/Card';
-import { InfoCard } from '@/components/InfoCard';
-import { PartnerPair } from '@/components/PartnerCard';
-import { PersonStatRow } from '@/components/PersonStatRow';
-import { ScreenTimeCard } from '@/components/ScreenTimeCard';
+import { GearButton } from '@/components/GearButton';
+import { NavCard } from '@/components/NavCard';
+import { PresenceIndicator } from '@/components/PresenceIndicator';
 import { Screen } from '@/components/Screen';
 import { SectionHeader } from '@/components/SectionHeader';
 import { StatusBadge } from '@/components/StatusBadge';
+import { useMyBattery, usePartnerBattery } from '@/hooks/useBattery';
+import { activityMessage, activityVisual, useActivityFeed } from '@/hooks/useActivityFeed';
 import { usePartnerPresence } from '@/hooks/usePresence';
-import { MOCK_ME, MOCK_PARTNER } from '@/lib/placeholders';
-import { colors, font, spacing } from '@/lib/theme';
+import { greeting, timeAgo } from '@/lib/format';
+import { colors, font, radius, spacing } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
 /**
- * HOME — the couple's overview.
+ * HOME — a calm overview for two partners.
  *
- * The two people and their names are REAL (from the couple). The numbers
- * (screen time, battery, location, protection) are PLACEHOLDERS for now and
- * are clearly marked "Example data" — real values arrive in later phases.
+ * Real: names, avatars, partner presence, pending approval requests, and the
+ * recent activity feed. The section cards are shortcuts into each area; they
+ * show honest status and never invented numbers.
  */
 export default function Home() {
-  const { myProfile, partnerProfile, partnerId } = useCouple();
+  const router = useRouter();
+  const { myProfile, partnerProfile, partnerId, incomingRequests, outgoingRequests, refresh, refreshRequests } =
+    useCouple();
+  const partnerStatus = usePartnerPresence(partnerId);
+  const { logs } = useActivityFeed(3);
+  const myBattery = useMyBattery();
+  const { battery: partnerBattery, stale: partnerBatteryStale } = usePartnerBattery(partnerId);
+
   const myName = myProfile?.display_name ?? 'You';
   const partnerName = partnerProfile?.display_name ?? 'Partner';
-  const partnerStatus = usePartnerPresence(partnerId);
+  const presenceLabel =
+    partnerStatus.state === 'online' ? `${partnerName} is online` : `${partnerName} · ${partnerStatus.label}`;
+
+  async function onRequestDone() {
+    await Promise.all([refreshRequests(), refresh()]);
+  }
 
   return (
-    <Screen title="Us ❤️" subtitle="Your shared space">
-      <Card style={styles.pairCard} tint={colors.card}>
-        <PartnerPair myName={myName} partnerName={partnerName} partnerStatus={partnerStatus} />
-      </Card>
-
-      <View style={styles.exampleNote}>
-        <Text style={styles.exampleText}>Showing example data — live stats come in a later update.</Text>
+    <Screen
+      headerLeft={<BondLogo size={24} />}
+      right={
+        <View style={styles.headerRight}>
+          <AvatarStack />
+          <GearButton badge={incomingRequests.length > 0} />
+        </View>
+      }
+    >
+      <Text style={styles.greeting}>{greeting()}</Text>
+      <Text style={styles.title}>Today, together</Text>
+      <View style={styles.presence}>
+        <PresenceIndicator state={partnerStatus.state} label={presenceLabel} />
       </View>
 
-      <SectionHeader title="Screen Time" />
-      <ScreenTimeCard
-        myLabel={myName}
-        partnerLabel={partnerName}
-        myText={MOCK_ME.screenTime}
-        partnerText={MOCK_PARTNER.screenTime}
-        myFraction={MOCK_ME.screenFraction}
-      />
+      <View style={styles.inner}>
+        {/* Pending approvals that need MY decision */}
+        {incomingRequests.length > 0 ? (
+          <View style={styles.requests}>
+            {incomingRequests.map((req) => (
+              <ApprovalRequestCard
+                key={req.id}
+                request={req}
+                direction="incoming"
+                otherName={partnerName}
+                onDone={onRequestDone}
+              />
+            ))}
+          </View>
+        ) : null}
 
-      <SectionHeader title="Battery" />
-      <InfoCard icon="battery-half" title="Battery" accent={colors.success} accentBg={colors.successSoft}>
-        <PersonStatRow
-          who={myName}
-          value={`${MOCK_ME.battery}%`}
-          badge={MOCK_ME.charging ? <StatusBadge label="Charging" tone="success" /> : undefined}
-        />
-        <PersonStatRow
-          who={partnerName}
-          value={`${MOCK_PARTNER.battery}%`}
-          badge={MOCK_PARTNER.charging ? <StatusBadge label="Charging" tone="success" /> : undefined}
-          last
-        />
-      </InfoCard>
+        {/* Requests I sent that are waiting on my partner */}
+        {outgoingRequests.length > 0 ? (
+          <View style={styles.requests}>
+            {outgoingRequests.map((req) => (
+              <ApprovalRequestCard
+                key={req.id}
+                request={req}
+                direction="outgoing"
+                otherName={partnerName}
+                onDone={onRequestDone}
+              />
+            ))}
+          </View>
+        ) : null}
 
-      <SectionHeader title="Location" />
-      <InfoCard icon="location" title="Location" accent={colors.blue} accentBg={colors.blueSoft}>
-        <PersonStatRow
-          who={myName}
-          value={MOCK_ME.locationPlace}
-          valueColor={MOCK_ME.locationSharing ? colors.text : colors.muted}
-          badge={<StatusBadge label={MOCK_ME.locationSharing ? 'ON' : 'OFF'} tone={MOCK_ME.locationSharing ? 'blue' : 'neutral'} />}
-        />
-        <PersonStatRow
-          who={partnerName}
-          value={MOCK_PARTNER.locationPlace}
-          badge={<StatusBadge label={MOCK_PARTNER.locationSharing ? 'ON' : 'OFF'} tone={MOCK_PARTNER.locationSharing ? 'blue' : 'neutral'} />}
-          last
-        />
-      </InfoCard>
+        <View style={styles.cards}>
+          <NavCard
+            icon="time-outline"
+            title="Screen time"
+            subtitle="Set up Usage Access to see app usage"
+            accent={colors.me}
+            accentBg={colors.meSoft}
+            onPress={() => router.push('/screen-time')}
+          />
+          <NavCard
+            icon="location-outline"
+            title="Location"
+            subtitle="See where you both are"
+            accent={colors.blue}
+            accentBg={colors.blueSoft}
+            onPress={() => router.push('/location')}
+          />
+          <NavCard
+            icon="shield-checkmark-outline"
+            title="Protection"
+            subtitle="No active protection yet"
+            accent={colors.primary}
+            accentBg={colors.primarySoft}
+            onPress={() => router.push('/controls')}
+          />
+        </View>
 
-      <SectionHeader title="Protection" />
-      <InfoCard icon="shield-checkmark" title="Protection" accent={colors.primary} accentBg={colors.primarySoft}>
-        <PersonStatRow
-          who={myName}
-          value={MOCK_ME.protection}
-          valueColor={MOCK_ME.protectionOn ? colors.text : colors.muted}
-          badge={<StatusBadge label={MOCK_ME.protectionOn ? 'ON' : 'OFF'} tone={MOCK_ME.protectionOn ? 'primary' : 'neutral'} />}
-        />
-        <PersonStatRow
-          who={partnerName}
-          value={MOCK_PARTNER.protectionOn ? 'Adult websites' : 'None'}
-          badge={<StatusBadge label={MOCK_PARTNER.protectionOn ? 'ON' : 'OFF'} tone={MOCK_PARTNER.protectionOn ? 'primary' : 'neutral'} />}
-          last
-        />
-      </InfoCard>
+        <SectionHeader title="Battery" />
+        <Card>
+          <View style={styles.batteryRow}>
+            <Text style={styles.batteryName}>You</Text>
+            <View style={styles.batteryRight}>
+              {myBattery.charging ? (
+                <Ionicons name="flash" size={14} color={colors.success} style={{ marginRight: 4 }} />
+              ) : null}
+              <Text style={styles.batteryValue}>{myBattery.level > 0 ? `${myBattery.level}%` : 'Unavailable'}</Text>
+            </View>
+          </View>
+          <View style={[styles.batteryRow, styles.batteryDivider]}>
+            <Text style={styles.batteryName}>{partnerName}</Text>
+            <View style={styles.batteryRight}>
+              {partnerBattery ? (
+                <>
+                  {partnerBattery.is_charging ? (
+                    <Ionicons name="flash" size={14} color={colors.success} style={{ marginRight: 4 }} />
+                  ) : null}
+                  <Text style={styles.batteryValue}>{partnerBattery.level}%</Text>
+                  {partnerBatteryStale ? <StatusBadge label="May be stale" tone="warning" /> : null}
+                  <Text style={styles.batteryTime}>{timeAgo(partnerBattery.updated_at)}</Text>
+                </>
+              ) : (
+                <Text style={styles.batteryMuted}>Not shared</Text>
+              )}
+            </View>
+          </View>
+        </Card>
 
-      <View style={{ height: spacing.xl }} />
+        <SectionHeader
+          title="Recent activity"
+          right={
+            <Text style={styles.seeAll} onPress={() => router.push('/activity')}>
+              See all
+            </Text>
+          }
+        />
+        <Card>
+          {logs.length === 0 ? (
+            <Text style={styles.empty}>Nothing yet. Activity between you two will show up here.</Text>
+          ) : (
+            logs.map((log, i) => {
+              const v = activityVisual(log.kind);
+              return (
+                <View key={log.id} style={[styles.activityRow, i < logs.length - 1 && styles.divider]}>
+                  <Ionicons
+                    name={v.icon as React.ComponentProps<typeof Ionicons>['name']}
+                    size={18}
+                    color={colors.primary}
+                    style={styles.activityIcon}
+                  />
+                  <Text style={styles.activityText} numberOfLines={2}>
+                    {activityMessage(log, { myName, partnerName })}
+                  </Text>
+                  <Text style={styles.activityTime}>{timeAgo(log.created_at)}</Text>
+                </View>
+              );
+            })
+          )}
+        </Card>
+
+        <View style={{ height: spacing.xl }} />
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  pairCard: { paddingVertical: spacing.xl },
-  exampleNote: {
-    marginTop: spacing.lg,
-    backgroundColor: colors.warningSoft,
-    borderRadius: 14,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-  },
-  exampleText: { ...font.small, color: '#8a5a12', textAlign: 'center' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  greeting: { ...font.body, color: colors.subtext },
+  title: { ...font.title, color: colors.text, marginTop: 2 },
+  presence: { marginTop: spacing.sm },
+  inner: {},
+  batteryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.sm },
+  batteryDivider: { borderTopWidth: 1, borderTopColor: colors.border },
+  batteryName: { ...font.body, fontWeight: '600', color: colors.text },
+  batteryRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  batteryValue: { ...font.body, fontWeight: '700', color: colors.text },
+  batteryTime: { ...font.tiny, color: colors.muted },
+  batteryMuted: { ...font.small, color: colors.muted },
+  requests: { marginTop: spacing.lg, gap: spacing.md },
+  cards: { marginTop: spacing.lg, gap: spacing.md },
+  seeAll: { ...font.small, fontWeight: '700', color: colors.primary },
+  empty: { ...font.small, color: colors.muted, lineHeight: 19 },
+  activityRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm + 2 },
+  divider: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  activityIcon: { marginRight: spacing.sm, width: 22, textAlign: 'center' },
+  activityText: { ...font.small, color: colors.text, flex: 1, lineHeight: 18 },
+  activityTime: { ...font.tiny, color: colors.muted, marginLeft: spacing.sm },
 });

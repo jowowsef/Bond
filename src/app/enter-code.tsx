@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BackHeader } from '@/components/BackHeader';
 import { Button } from '@/components/Button';
 import { joinCouple, normalizeCode, unpair } from '@/lib/pairing';
-import { colors, font, radius, spacing } from '@/lib/theme';
+import { colors, font, fontFamily, radius, spacing } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
 /**
@@ -57,7 +57,7 @@ export default function EnterCode() {
     await refresh();
     setLoading(false);
     setConnected(true);
-    setTimeout(() => router.replace('/(tabs)'), 1400);
+    setTimeout(() => router.replace('/name-setup'), 1400);
   }
 
   if (connected) {
@@ -85,7 +85,7 @@ export default function EnterCode() {
           // too). Spaces and lowercase are still cleaned up by normalizeCode
           // on connect, so they never cause an error.
           onChangeText={(text) => setCode(text.toUpperCase())}
-          placeholder="BOND-7K4P2"
+          placeholder="K7P4X2"
           placeholderTextColor={colors.muted}
           style={styles.input}
           autoCapitalize="characters"
@@ -116,6 +116,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     paddingHorizontal: spacing.lg,
     paddingVertical: 14,
+    fontFamily,
     fontSize: 20,
     letterSpacing: 2,
     fontWeight: '700',

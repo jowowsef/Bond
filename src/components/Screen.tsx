@@ -17,6 +17,7 @@ export function Screen({
   children,
   title,
   subtitle,
+  headerLeft,
   right,
   scroll = true,
   refreshControl,
@@ -24,19 +25,28 @@ export function Screen({
   children: React.ReactNode;
   title?: string;
   subtitle?: string;
+  /** Custom left header content (e.g. the logo on Home) instead of a title. */
+  headerLeft?: React.ReactNode;
   right?: React.ReactNode;
   scroll?: boolean;
   refreshControl?: React.ReactElement<RefreshControlProps>;
 }) {
-  const header = title ? (
-    <View style={styles.header}>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.title}>{title}</Text>
-        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+  // A fixed-height header row keeps the right-side gear in exactly the same
+  // position on every tab, whether the left side is a title or the logo.
+  const header =
+    title || headerLeft || right ? (
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          {headerLeft ?? (
+            <>
+              {title ? <Text style={styles.title}>{title}</Text> : null}
+              {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+            </>
+          )}
+        </View>
+        {right}
       </View>
-      {right}
-    </View>
-  ) : null;
+    ) : null;
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
@@ -67,9 +77,16 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    // Constant height (not minHeight) so the row is identical on every tab.
+    // This keeps the right-side gear centered at the same vertical position
+    // whether the left side is a title+subtitle (Activity/Location/Controls)
+    // or just the logo (Home), which previously made Home's gear sit higher.
+    height: 54,
     marginBottom: spacing.lg,
     marginTop: spacing.xs,
   },
+  headerLeft: { flex: 1, justifyContent: 'center' },
   title: { ...font.title, color: colors.text },
   subtitle: { ...font.small, color: colors.subtext, marginTop: 2 },
 });

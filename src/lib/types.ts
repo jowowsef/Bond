@@ -6,6 +6,7 @@ export type Profile = {
   id: string;
   display_name: string;
   avatar_path: string | null;
+  avatar_color: 'blue' | 'pink' | null;
   mood: Mood | null;
   quick_status: string | null;
   mood_updated_at: string | null;
@@ -123,6 +124,23 @@ export type ActiveControl = {
   enabled_at: string;
   revoked_at: string | null;
   revoked_by: string | null;
+};
+
+export type ApprovalAction = 'unpair' | 'location_off';
+
+export type ApprovalStatus = 'pending' | 'approved' | 'declined' | 'cancelled' | 'expired';
+
+export type ApprovalRequest = {
+  id: string;
+  couple_id: string;
+  requester_id: string;
+  target_id: string;
+  action: ApprovalAction;
+  details: Record<string, unknown>;
+  status: ApprovalStatus;
+  created_at: string;
+  expires_at: string;
+  resolved_at: string | null;
 };
 
 export type ActivityLog = {

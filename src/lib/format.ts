@@ -80,6 +80,14 @@ export function initials(name: string | null | undefined): string {
   return parts.map((p) => p[0]?.toUpperCase() ?? '').join('') || '?';
 }
 
+/** "Good morning" / "Good afternoon" / "Good evening" for the local time. */
+export function greeting(date: Date = new Date()): string {
+  const h = date.getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
 /** "Mae" → "Mae's" ; "James" → "James'" */
 export function possessive(name: string): string {
   return name.endsWith('s') ? `${name}'` : `${name}'s`;

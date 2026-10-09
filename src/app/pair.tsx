@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BackHeader } from '@/components/BackHeader';
 import { Card } from '@/components/Card';
 import { colors, font, radius, spacing } from '@/lib/theme';
+import { useCouple } from '@/state/couple';
 
 /**
  * MUTUAL PAIRING
@@ -16,6 +17,10 @@ import { colors, font, radius, spacing } from '@/lib/theme';
  */
 export default function Pair() {
   const router = useRouter();
+  const { phase } = useCouple();
+
+  // Safety net: if this user turns out to be paired, go to the main app.
+  if (phase === 'paired') return <Redirect href="/(tabs)" />;
 
   return (
     <SafeAreaView style={styles.screen}>

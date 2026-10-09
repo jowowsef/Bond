@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
-import { colors, radius } from '@/lib/theme';
+import { colors, fontFamily, radius } from '@/lib/theme';
 
 /** A rounded button in one of four styles. */
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -65,7 +65,7 @@ export function Button({
 const styles = StyleSheet.create({
   base: {
     height: 54,
-    borderRadius: radius.pill,
+    borderRadius: radius.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -73,6 +73,6 @@ const styles = StyleSheet.create({
   },
   small: { height: 40, paddingHorizontal: 16 },
   icon: { marginRight: 8 },
-  text: { fontSize: 16, fontWeight: '700' },
+  text: { fontFamily, fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
   textSmall: { fontSize: 14 },
 });

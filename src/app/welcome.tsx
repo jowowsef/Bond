@@ -1,11 +1,12 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BondLogo } from '@/components/BondLogo';
 import { Button } from '@/components/Button';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { colors, font, spacing } from '@/lib/theme';
+import { useCouple } from '@/state/couple';
 
 /**
  * The first screen. No sign in / sign up — just the mutual pairing entry
@@ -13,14 +14,15 @@ import { colors, font, spacing } from '@/lib/theme';
  */
 export default function Welcome() {
   const router = useRouter();
+  const { phase } = useCouple();
+
+  // Safety net: if this user turns out to be paired, never leave them here.
+  if (phase === 'paired') return <Redirect href="/(tabs)" />;
 
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.hero}>
-        <View style={styles.badge}>
-          <Ionicons name="heart" size={44} color={colors.primary} />
-        </View>
-        <Text style={styles.title}>Bond</Text>
+        <BondLogo size={92} layout="column" />
         <Text style={styles.tagline}>Your private space for two.</Text>
       </View>
 
@@ -50,17 +52,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   hero: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  badge: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.xl,
-  },
-  title: { ...font.hero, fontSize: 44, color: colors.text },
-  tagline: { ...font.body, fontSize: 17, color: colors.subtext, marginTop: spacing.sm },
+  tagline: { ...font.body, fontSize: 17, color: colors.subtext, marginTop: spacing.md },
   actions: { paddingBottom: spacing.lg },
   footnote: { ...font.small, color: colors.muted, textAlign: 'center', marginTop: spacing.lg },
   warning: {
