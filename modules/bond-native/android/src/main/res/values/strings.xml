@@ -1,4 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-  <string name="bond_accessibility_description">Bond uses this ONLY to pause apps that you agreed to block (for example after accepting your partner\'s request). It only sees the name of the app you open. It cannot read your screen, messages or passwords. You can turn this off at any time here, or remove the block in Bond → Controls.</string>
-</resources>

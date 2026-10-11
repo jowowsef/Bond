@@ -1,0 +1,24 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.bond.usage'
+version = '1.0.0'
+
+android {
+  namespace "com.bond.usage"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+    consumerProguardFiles "proguard-rules.pro"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  // Unit tests only (src/test); not part of the app.
+  testImplementation 'junit:junit:4.13.2'
+}

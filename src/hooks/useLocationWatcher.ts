@@ -1,7 +1,7 @@
 import * as Location from 'expo-location';
 import { useEffect, useState } from 'react';
 import { AppState } from 'react-native';
-import { uploadLocation } from '@/lib/location';
+import { reportWatchError, resetLocationPipeline, submitFix } from '@/lib/location';
 import { supabase, uniqueTopic } from '@/lib/supabase';
 
 /**
@@ -13,23 +13,16 @@ import { supabase, uniqueTopic } from '@/lib/supabase';
  * mounted once in the tabs layout, so no screen (including Home) starts a
  * second watcher.
  *
- * To avoid excessive Supabase writes we only upload when the position moved a
- * meaningful distance or enough time has passed. Android's OS permission is
- * checked first and nothing is uploaded if it is not granted.
+ * Accuracy: High (uses GPS) because it only runs while the app is open AND
+ * sharing is on, which keeps the battery cost bounded. Every reading goes
+ * through submitFix(), which validates it, ignores clearly worse or stale
+ * readings, and shares at most one write at a time (newest wins), so writes
+ * stay limited to real movement or a 2 minute heartbeat.
  */
 
-const MIN_UPLOAD_GAP_MS = 2 * 60 * 1000; // at least 2 min between writes when still
-const MIN_UPLOAD_MOVE_M = 25; // or whenever we moved at least 25 m
-
-function metersBetween(aLat: number, aLng: number, bLat: number, bLng: number): number {
-  const R = 6371000;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(bLat - aLat);
-  const dLng = toRad(bLng - aLng);
-  const h =
-    Math.sin(dLat / 2) ** 2 + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
+/** How often Android may deliver a reading. 15 s keeps a moving person from
+ *  lagging far behind; Supabase writes are still limited by submitFix(). */
+const WATCH_INTERVAL_MS = 15_000;
 
 export function useLocationWatcher(userId: string | null): void {
   const [sharing, setSharing] = useState(false);
@@ -68,34 +61,37 @@ export function useLocationWatcher(userId: string | null): void {
     if (!userId || !sharing) return;
 
     let subscription: Location.LocationSubscription | null = null;
+    let starting = false;
     let cancelled = false;
-    let lastUploadAt = 0;
-    let lastLat: number | null = null;
-    let lastLng: number | null = null;
 
+    // The pipeline enforces validity, ordering, accuracy and write limits. A
+    // late callback after sharing stops is still safe: RLS blocks the write.
     const handle = (loc: Location.LocationObject) => {
-      const { latitude, longitude } = loc.coords;
-      const now = Date.now();
-      const moved =
-        lastLat === null || lastLng === null ? Infinity : metersBetween(lastLat, lastLng, latitude, longitude);
-      if (moved < MIN_UPLOAD_MOVE_M && now - lastUploadAt < MIN_UPLOAD_GAP_MS) return;
-      lastUploadAt = now;
-      lastLat = latitude;
-      lastLng = longitude;
-      // uploadLocation re-checks the session; RLS blocks the write if sharing
-      // is off, so a stale callback can never leak a position.
-      uploadLocation(loc, false).catch(() => undefined);
+      if (!cancelled) submitFix(userId, loc, false);
     };
 
     const start = async () => {
+      if (cancelled || subscription || starting) return;
+      starting = true;
       try {
         const perm = await Location.getForegroundPermissionsAsync();
-        if (!perm.granted || cancelled || subscription) return;
-        // distanceInterval 0: Android sends no updates while standing still
-        // when a distance filter is set, which made an open, stationary phone
-        // look stale. Writes stay limited by the 2 min / 25 m throttle above.
+        if (!perm.granted) {
+          reportWatchError('Location permission is not granted.');
+          return;
+        }
+        if (!(await Location.hasServicesEnabledAsync())) {
+          reportWatchError('Phone location is turned off.');
+          return;
+        }
+        // distanceInterval 0: with a distance filter Android sends nothing
+        // while you stand still, which made an open phone look stale.
         const sub = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.Balanced, timeInterval: 30_000, distanceInterval: 0 },
+          {
+            accuracy: Location.Accuracy.High,
+            timeInterval: WATCH_INTERVAL_MS,
+            distanceInterval: 0,
+            mayShowUserSettingsDialog: false,
+          },
           handle,
         );
         if (cancelled) {
@@ -103,8 +99,11 @@ export function useLocationWatcher(userId: string | null): void {
           return;
         }
         subscription = sub;
-      } catch {
-        // GPS off or transient error: the next foreground will retry.
+        reportWatchError(null);
+      } catch (e) {
+        reportWatchError((e as Error)?.message ?? 'Could not start location updates.');
+      } finally {
+        starting = false;
       }
     };
 
@@ -123,6 +122,9 @@ export function useLocationWatcher(userId: string | null): void {
       cancelled = true;
       appSub.remove();
       stop();
+      // Sharing turned off (or user changed): forget readings so nothing old
+      // is reused or shown as "my location".
+      resetLocationPipeline();
     };
   }, [userId, sharing]);
 }

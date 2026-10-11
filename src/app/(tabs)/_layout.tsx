@@ -1,11 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Redirect, Tabs } from 'expo-router';
-import React from 'react';
+import { Tabs } from 'expo-router';
+import { Redirect } from '@/components/Redirect';
+import React, { useEffect } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useBackgroundLocation } from '@/hooks/useBackgroundLocation';
+import { useCurrentAppSync } from '@/hooks/useCurrentApp';
+import { useScreenTimeSync } from '@/hooks/useScreenTimeSync';
+import { useCurrentAppService } from '@/hooks/useCurrentAppService';
 import { useBatterySync } from '@/hooks/useBattery';
 import { useLocationWatcher } from '@/hooks/useLocationWatcher';
-import { usePresenceHeartbeat } from '@/hooks/usePresence';
-import { colors, fontFamily } from '@/lib/theme';
+import { usePartnerAlerts } from '@/hooks/usePartnerAlerts';
+import { useActivityUnreadTracker } from '@/lib/activityUnread';
+import { registerBackgroundJobs } from '@/lib/backgroundJobs';
+import { colors, fontFamily, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
 /**
@@ -16,18 +23,51 @@ import { useCouple } from '@/state/couple';
  * device's safe-area inset so it never feels stuck to the screen edge.
  */
 export default function TabsLayout() {
-  const { phase, userId } = useCouple();
+  useThemeVersion();
+  const { phase, userId, pairingSetup, partnerProfile, session, unpairState } = useCouple();
+  const partnerName = partnerProfile?.display_name ?? 'Your partner';
   const insets = useSafeAreaInsets();
+  // Nothing is sent from the main app until this couple is fully paired and
+  // its setup is finished (the hooks below get no user id otherwise).
+  const ready = phase === 'paired' && pairingSetup === 'done';
+  const activeUser = ready ? userId : null;
 
-  // Keep my "last active" fresh, and sync my battery while sharing is on.
-  usePresenceHeartbeat(userId);
-  useBatterySync(userId);
+  // Sync my battery while sharing is on.
+  useBatterySync(activeUser);
   // One foreground location watcher for the whole app (gated by sharing +
   // permission + app active inside the hook). No screen starts a second one.
-  useLocationWatcher(userId);
+  useLocationWatcher(activeUser);
+  // Bell dot for new partner activity (one tracker for all headers).
+  useActivityUnreadTracker(activeUser);
+  // Location sharing ON + Android "Allow all the time" -> keep sharing while
+  // Bond is closed (with Android's notification). Re-checked on every start
+  // and return to Bond; stopped as soon as any rule no longer holds.
+  useBackgroundLocation({ userId: activeUser, partnerName });
+  // Partner low-battery alerts addressed to me (decided by the server).
+  usePartnerAlerts(activeUser);
+  // "Currently Using" while Bond is open (only if I chose to share it).
+  useCurrentAppSync(activeUser);
+  // My screen time when Bond comes back or is left, from any screen (it was
+  // only sent while the Screen Time tab was open, or by the background job).
+  useScreenTimeSync(activeUser);
+  // ...and while Bond is closed, through its foreground service (sharing on +
+  // Usage access granted; Android shows a notification). No separate switch.
+  useCurrentAppService({ userId: activeUser, partnerName });
+  // Ask Android to run the battery and screen time jobs in the background
+  // (each job still checks pairing, setup and its own sharing setting).
+  useEffect(() => {
+    if (activeUser) void registerBackgroundJobs();
+  }, [activeUser]);
 
-  // Guard: never show the main app unless we're fully paired.
-  if (phase !== 'paired') return <Redirect href="/" />;
+  // Just unpaired: the app's unpair handler (UnpairWatcher in the root layout)
+  // leaves these screens for the confirmation screen. Redirecting here as
+  // well would make two navigations compete, so show nothing for that moment.
+  if (phase === 'unpaired' && session && unpairState !== 'none') return null;
+  // Any other state that isn't "paired with setup done": the start screen decides.
+  if (!ready) {
+    if (phase === 'loading' || (phase === 'paired' && pairingSetup === 'unknown')) return null;
+    return <Redirect href="/" />;
+  }
 
   // Lift the bar off the bottom edge: the device's safe-area inset (gesture
   // bar / nav buttons) plus comfortable breathing room. Applied once here, so
@@ -56,16 +96,16 @@ export default function TabsLayout() {
         options={{ title: 'Home', tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" size={size} color={color} /> }}
       />
       <Tabs.Screen
-        name="activity"
-        options={{ title: 'Activity', tabBarIcon: ({ color, size }) => <Ionicons name="pulse-outline" size={size} color={color} /> }}
+        name="screen-time"
+        options={{ title: 'Screen Time', tabBarIcon: ({ color, size }) => <Ionicons name="time-outline" size={size} color={color} /> }}
       />
       <Tabs.Screen
         name="location"
         options={{ title: 'Location', tabBarIcon: ({ color, size }) => <Ionicons name="location-outline" size={size} color={color} /> }}
       />
       <Tabs.Screen
-        name="controls"
-        options={{ title: 'Controls', tabBarIcon: ({ color, size }) => <Ionicons name="shield-outline" size={size} color={color} /> }}
+        name="calendar"
+        options={{ title: 'Calendar', tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" size={size} color={color} /> }}
       />
     </Tabs>
   );

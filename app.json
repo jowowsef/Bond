@@ -6,12 +6,13 @@
     "orientation": "portrait",
     "icon": "./assets/bond-icon.png",
     "scheme": "bond",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "experiments": {
       "typedRoutes": true
     },
     "android": {
       "package": "com.bond.couple",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#F7F9FC",
         "foregroundImage": "./assets/adaptive-icon-foreground.png",
@@ -20,11 +21,11 @@
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_BACKGROUND_LOCATION",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_LOCATION",
         "android.permission.POST_NOTIFICATIONS",
-        "android.permission.RECEIVE_BOOT_COMPLETED"
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
       ],
       "blockedPermissions": [
         "android.permission.CAMERA",
@@ -43,7 +44,9 @@
         "expo-location",
         {
           "isAndroidBackgroundLocationEnabled": true,
-          "isAndroidForegroundServiceEnabled": true
+          "isAndroidForegroundServiceEnabled": true,
+          "locationWhenInUsePermission": "Bond uses your location only while you have location sharing turned on, so your partner can see where you are.",
+          "locationAlwaysAndWhenInUsePermission": "Bond can keep sharing your location while it is closed, only if you turn on \"Share while Bond is closed\"."
         }
       ],
       [
@@ -100,7 +103,14 @@
           "image": "./assets/adaptive-icon-foreground.png",
           "imageWidth": 180
         }
-      ]
-    ]
+      ],
+      "@react-native-community/datetimepicker"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "010efe91-8b6a-4bbb-9a35-7e6c5a2a2361"
+      }
+    }
   }
 }

@@ -1,7 +1,7 @@
 import * as Battery from 'expo-battery';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
-import { isChargingState, syncBattery, type LocalBattery } from '@/lib/battery';
+import { getLocalBattery, isChargingState, syncBattery, type LocalBattery } from '@/lib/battery';
 import { supabase, uniqueTopic } from '@/lib/supabase';
 import type { BatteryStatus } from '@/lib/types';
 
@@ -9,19 +9,33 @@ const SYNC_INTERVAL_MS = 15 * 60 * 1000; // 15 min while the app is open
 /** Older than this = show as possibly stale. */
 export const BATTERY_STALE_MS = 30 * 60 * 1000;
 
-/** This phone's live battery (updates as the level / charging state changes). */
-export function useMyBattery(): LocalBattery {
+/**
+ * This phone's live battery (updates as the level / charging state changes),
+ * plus `refresh` to read it from Android right now (pull to refresh).
+ */
+export function useMyBattery(): LocalBattery & { refresh: () => Promise<void> } {
   const level = Battery.useBatteryLevel();
   const state = Battery.useBatteryState();
+  // A fresh reading from refresh(), used until Android reports the next change.
+  const [fresh, setFresh] = useState<LocalBattery | null>(null);
+  useEffect(() => {
+    setFresh(null);
+  }, [level, state]);
+  const refresh = useCallback(async () => {
+    setFresh(await getLocalBattery());
+  }, []);
   return {
-    level: Math.round((level ?? 0) * 100),
-    charging: isChargingState(state),
+    ...(fresh ?? { level: Math.round((level ?? 0) * 100), charging: isChargingState(state) }),
+    refresh,
   };
 }
 
 /**
  * Keeps my battery synced to Supabase while sharing is ON and the app is open:
- * on change, when returning to the foreground, and every 15 minutes.
+ * on change, when returning to the foreground, when leaving it, and every 15
+ * minutes while open. (The interval doesn't run while Bond is in the
+ * background, because React Native pauses timers then; the background job
+ * and background location updates send it then.)
  */
 export function useBatterySync(userId: string | null): void {
   const [sharing, setSharing] = useState(false);
@@ -31,8 +45,10 @@ export function useBatterySync(userId: string | null): void {
     if (!userId) return;
     let active = true;
     const read = async () => {
-      const { data } = await supabase.from('privacy_settings').select('share_battery').eq('user_id', userId).maybeSingle();
-      if (active) setSharing(!!data?.share_battery);
+      const { data, error } = await supabase.from('privacy_settings').select('share_battery').eq('user_id', userId).maybeSingle();
+      // A failed read keeps the last known value. (Before, it was read as
+      // "off" and stopped all battery updates until the setting changed.)
+      if (active && !error) setSharing(!!data?.share_battery);
     };
     void read();
     const channel = supabase
@@ -43,8 +59,13 @@ export function useBatterySync(userId: string | null): void {
         () => void read(),
       )
       .subscribe();
+    // Re-check when Bond comes back (it may have changed, or the first read failed).
+    const appSub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') void read();
+    });
     return () => {
       active = false;
+      appSub.remove();
       void supabase.removeChannel(channel);
     };
   }, [userId]);
@@ -52,14 +73,15 @@ export function useBatterySync(userId: string | null): void {
   useEffect(() => {
     if (!userId || !sharing) return;
     const push = () => {
-      void syncBattery(userId);
+      syncBattery(userId).catch(() => {}); // retried on the next change / interval
     };
     push();
     const interval = setInterval(push, SYNC_INTERVAL_MS);
     const levelSub = Battery.addBatteryLevelListener(push);
     const stateSub = Battery.addBatteryStateListener(push);
-    const appSub = AppState.addEventListener('change', (s) => {
-      if (s === 'active') push();
+    // Coming back, and leaving (the last reading before Bond goes to the background).
+    const appSub = AppState.addEventListener('change', (st) => {
+      if (st === 'active' || st === 'background') push();
     });
     return () => {
       clearInterval(interval);
@@ -71,34 +93,53 @@ export function useBatterySync(userId: string | null): void {
 }
 
 /** My partner's latest battery (live via realtime), or null when not shared. */
-export function usePartnerBattery(partnerId: string | null): { battery: BatteryStatus | null; stale: boolean } {
+export function usePartnerBattery(partnerId: string | null): {
+  battery: BatteryStatus | null;
+  stale: boolean;
+  /** Re-read now (pull to refresh). Rejects on a network / database error. */
+  reload: () => Promise<void>;
+} {
   const [battery, setBattery] = useState<BatteryStatus | null>(null);
   const [now, setNow] = useState(Date.now());
+  const partnerRef = useRef(partnerId);
+  partnerRef.current = partnerId;
+  const seq = useRef(0);
+
+  /**
+   * Read the newest reading the partner's phone has sent. Used on open, on
+   * realtime changes, when Bond comes back and by pull to refresh. Only the
+   * latest request is applied, so a slower older answer can't put an old
+   * percentage back. Rejects on a network / server error (the last value stays).
+   */
+  const reload = useCallback(async () => {
+    const id = partnerRef.current;
+    if (!id) return;
+    const mine = ++seq.current;
+    const { data, error } = await supabase.from('battery_status').select('*').eq('user_id', id).maybeSingle();
+    if (mine !== seq.current || partnerRef.current !== id) return;
+    if (error) throw error;
+    setBattery((data as BatteryStatus) ?? null);
+    setNow(Date.now());
+  }, []);
 
   useEffect(() => {
-    if (!partnerId) {
-      setBattery(null);
-      return;
-    }
-    let active = true;
-    const load = async () => {
-      const { data } = await supabase.from('battery_status').select('*').eq('user_id', partnerId).maybeSingle();
-      if (active) setBattery((data as BatteryStatus) ?? null);
-    };
-    void load();
+    seq.current++;
+    setBattery(null);
+    if (!partnerId) return;
+    const run = () => void reload().catch(() => {});
+    run();
     const channel = supabase
       .channel(uniqueTopic(`battery-watch-${partnerId}`))
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'battery_status', filter: `user_id=eq.${partnerId}` },
-        () => void load(),
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'battery_status', filter: `user_id=eq.${partnerId}` }, run)
       .subscribe();
+    const appSub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') run();
+    });
     return () => {
-      active = false;
+      appSub.remove();
       void supabase.removeChannel(channel);
     };
-  }, [partnerId]);
+  }, [partnerId, reload]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 60_000);
@@ -106,5 +147,5 @@ export function usePartnerBattery(partnerId: string | null): { battery: BatteryS
   }, []);
 
   const stale = !!battery && now - new Date(battery.updated_at).getTime() > BATTERY_STALE_MS;
-  return { battery, stale };
+  return { battery, stale, reload };
 }

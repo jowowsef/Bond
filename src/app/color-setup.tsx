@@ -1,32 +1,33 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Redirect, useRouter } from 'expo-router';
+import { Redirect } from '@/components/Redirect';
 import React, { useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
 import { AVATAR_CHOICES, type AvatarColor } from '@/lib/avatar';
-import { supabase } from '@/lib/supabase';
-import { colors, font, radius, spacing } from '@/lib/theme';
+import { errorMessage, supabase } from '@/lib/supabase';
+import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
 /**
- * POST-PAIRING STEP 2 — "Choose your color".
+ * NEW PAIRING, STEP 3 (the last one): "Choose your color".
  *
- * Saves the chosen colour to profiles.avatar_color (the user's own choice —
- * never derived from pairing order, name, or device). Then continues to the
- * "You're all set!" screen.
+ * Saves the chosen colour to profiles.avatar_color (the user's own choice,
+ * never derived from pairing order, name, or device). Then the start screen
+ * continues to Home. Also shown for an older pairing without a color.
  */
 export default function ColorSetup() {
-  const router = useRouter();
-  const { phase, userId, myProfile, profileStep, refresh } = useCouple();
+  useThemeVersion();
+  const { phase, userId, myProfile, profileStep, refresh, pairingSetup, advancePairingSetup } = useCouple();
   const [selected, setSelected] = useState<AvatarColor | null>(
     myProfile?.avatar_color === 'blue' || myProfile?.avatar_color === 'pink' ? myProfile.avatar_color : null,
   );
   const [busy, setBusy] = useState(false);
 
-  if (phase !== 'paired' && phase !== 'loading') return <Redirect href="/" />;
-  if (profileStep === 'name') return <Redirect href="/name-setup" />;
+  // This screen belongs to the color step only (see name-setup.tsx).
+  const isMyStep = pairingSetup === 'color' || (pairingSetup === 'done' && profileStep === 'color');
+  if (phase !== 'loading' && pairingSetup !== 'unknown' && !isMyStep) return <Redirect href="/" />;
 
   async function onContinue() {
     if (!selected || !userId) return;
@@ -34,12 +35,13 @@ export default function ColorSetup() {
     const { error } = await supabase.from('profiles').update({ avatar_color: selected }).eq('id', userId);
     if (error) {
       setBusy(false);
-      Alert.alert('Could not save', error.message);
+      Alert.alert('Could not save', errorMessage(error));
       return;
     }
     await refresh();
+    // New pairing: setup is complete; the start screen continues to Home.
+    if (pairingSetup === 'color') await advancePairingSetup('color');
     setBusy(false);
-    router.replace('/all-set');
   }
 
   return (
@@ -76,7 +78,7 @@ export default function ColorSetup() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.background },
   body: { flex: 1, padding: spacing.xl, justifyContent: 'center' },
   title: { ...font.title, color: colors.text, textAlign: 'center' },
@@ -96,4 +98,4 @@ const styles = StyleSheet.create({
   choiceLabel: { ...font.h3, color: colors.text, marginTop: spacing.md },
   check: { position: 'absolute', top: spacing.sm, right: spacing.sm },
   footer: { padding: spacing.xl, paddingTop: 0 },
-});
+}));

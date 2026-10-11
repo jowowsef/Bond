@@ -1,6 +1,6 @@
 import React from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
-import { colors, fontFamily } from '@/lib/theme';
+import { Image, Text, View } from 'react-native';
+import { colors, fontFamily, themedStyles, useThemeVersion } from '@/lib/theme';
 
 // The split-heart mark (transparent background), generated from
 // assets/bond-icon.png so the app logo and the launcher icon match.
@@ -22,6 +22,7 @@ export function BondLogo({
   layout?: 'row' | 'column';
   showWordmark?: boolean;
 }) {
+  useThemeVersion();
   const isRow = layout === 'row';
   const wordSize = isRow ? Math.round(size * 0.92) : Math.round(size * 0.46);
 
@@ -43,8 +44,8 @@ export function BondLogo({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   row: { flexDirection: 'row', alignItems: 'center' },
   column: { alignItems: 'center' },
   word: { fontFamily, fontWeight: '800', color: colors.text },
-});
+}));

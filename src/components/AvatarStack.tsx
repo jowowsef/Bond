@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { ProfileAvatar } from './ProfileAvatar';
-import { colors } from '@/lib/theme';
+import { colors, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
 /**
@@ -10,6 +10,7 @@ import { useCouple } from '@/state/couple';
  * background-coloured ring makes the overlap look like a clean cut-out.
  */
 export function AvatarStack({ size = 36 }: { size?: number }) {
+  useThemeVersion();
   const { myProfile, partnerProfile } = useCouple();
   return (
     <View style={styles.row}>

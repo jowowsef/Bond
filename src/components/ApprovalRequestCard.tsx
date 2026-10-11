@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { Alert, Text, View } from 'react-native';
 import { Button } from './Button';
 import { Card } from './Card';
+import { UnpairConfirmModal } from './UnpairConfirmModal';
 import { approvalDescription, approvalTitle, cancelApproval, respondToApproval } from '@/lib/requests';
-import { colors, font, radius, spacing } from '@/lib/theme';
+import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import type { ApprovalRequest } from '@/lib/types';
 
 /**
@@ -24,25 +25,39 @@ export function ApprovalRequestCard({
   otherName: string;
   onDone: () => void;
 }) {
+  useThemeVersion();
   const [busy, setBusy] = useState(false);
+  const [confirmUnpair, setConfirmUnpair] = useState(false);
+  const busyRef = useRef(false);
 
   async function respond(accept: boolean) {
+    if (busyRef.current) return; // no duplicate answers
+    // Approving an unpair disconnects both people: always confirm first.
+    if (accept && request.action === 'unpair') {
+      setConfirmUnpair(true);
+      return;
+    }
+    busyRef.current = true;
     setBusy(true);
     const result = await respondToApproval(request.id, accept);
+    busyRef.current = false;
     setBusy(false);
     if (!result.ok) {
-      Alert.alert('Could not respond', result.message);
+      Alert.alert('Could not respond', result.message ?? 'Please try again.');
       return;
     }
     onDone();
   }
 
   async function withdraw() {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     const result = await cancelApproval(request.id);
+    busyRef.current = false;
     setBusy(false);
     if (!result.ok) {
-      Alert.alert('Could not withdraw', result.message);
+      Alert.alert('Could not withdraw', result.message ?? 'Please try again.');
       return;
     }
     onDone();
@@ -86,11 +101,36 @@ export function ApprovalRequestCard({
           <Button label="Withdraw" variant="ghost" small onPress={withdraw} loading={busy} />
         </View>
       )}
+
+      {danger && direction === 'incoming' ? (
+        <UnpairConfirmModal
+          visible={confirmUnpair}
+          mode="approve"
+          partnerName={otherName}
+          onCancel={() => setConfirmUnpair(false)}
+          onConfirm={async () => {
+            const result = await respondToApproval(request.id, true);
+            if (result.ok) return { ok: true };
+            // Maybe it already went through (for example a retry after a lost
+            // answer): re-read, and if the couple is gone the app shows the
+            // unpaired screen. The error stays visible otherwise.
+            onDone();
+            return { ok: false, message: result.message };
+          }}
+          onFinished={() => {
+            setConfirmUnpair(false);
+            // Reloads the couple state: this phone is now unpaired, and the app's
+            // unpair handler (UnpairWatcher) moves to Mutual Pairing. No
+            // navigation here, so nothing competes with it.
+            onDone();
+          }}
+        />
+      ) : null}
     </Card>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   card: { gap: spacing.sm },
   header: { flexDirection: 'row', alignItems: 'center' },
   iconWrap: {
@@ -105,4 +145,4 @@ const styles = StyleSheet.create({
   body: { ...font.small, color: colors.subtext, lineHeight: 19 },
   actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.sm, marginTop: spacing.xs },
   action: { minWidth: 104 },
-});
+}));

@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-import { colors, radius } from '@/lib/theme';
+import { Pressable, View } from 'react-native';
+import { colors, radius, themedStyles, useThemeVersion } from '@/lib/theme';
 
 /** A round settings button for screen headers. Opens the Settings screen. */
 export function GearButton({ badge = false }: { badge?: boolean }) {
+  useThemeVersion();
   const router = useRouter();
   return (
     <Pressable
@@ -20,7 +21,7 @@ export function GearButton({ badge = false }: { badge?: boolean }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   button: {
     width: 40,
     height: 40,
@@ -42,4 +43,4 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.card,
   },
-});
+}));

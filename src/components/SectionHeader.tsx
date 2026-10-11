@@ -1,9 +1,10 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { colors, font, spacing } from '@/lib/theme';
+import { Text, View } from 'react-native';
+import { colors, font, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 
 /** A small heading above a group of cards, with optional right-side content. */
 export function SectionHeader({ title, right }: { title: string; right?: React.ReactNode }) {
+  useThemeVersion();
   return (
     <View style={styles.row}>
       <Text style={styles.title}>{title}</Text>
@@ -12,7 +13,7 @@ export function SectionHeader({ title, right }: { title: string; right?: React.R
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -22,4 +23,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
   },
   title: { ...font.h3, color: colors.text },
-});
+}));

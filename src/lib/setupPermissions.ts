@@ -1,49 +1,20 @@
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
-import { Linking } from 'react-native';
+import { Linking, Platform } from 'react-native';
 
 /**
  * HONEST PERMISSION HELPERS
  *
  * These only use the Expo modules that are actually part of the current
  * build (expo-notifications, expo-location). We never pretend a permission
- * was granted — we ask Android, then report back the real state. When Android
+ * was granted: we ask Android, then report back the real state. When Android
  * requires the user to visit a system Settings page, we open it.
  *
- * Usage Access (for Screen Time) and other native-only permissions are NOT
- * here: they need the native Bond module that isn't in this build yet, so the
- * UI shows them honestly as "available in a later update" rather than faking
- * a status.
+ * Usage access (Screen Time) and Web Protection live in screenTime.ts and
+ * webProtection.ts, next to their native modules.
  */
 
 export type PermissionState = 'granted' | 'denied' | 'undetermined' | 'unavailable';
-
-export type FeatureKey = 'notifications' | 'location';
-
-export type FeatureInfo = {
-  key: FeatureKey;
-  title: string;
-  description: string;
-  required: boolean;
-  icon: 'notifications-outline' | 'location-outline';
-};
-
-export const SETUP_FEATURES: FeatureInfo[] = [
-  {
-    key: 'notifications',
-    title: 'Notifications',
-    description: 'So you see requests and updates from your partner, even when Bond is closed.',
-    required: false,
-    icon: 'notifications-outline',
-  },
-  {
-    key: 'location',
-    title: 'Location sharing',
-    description: 'Let your partner see your location while this is on. You can turn it off anytime (with their approval).',
-    required: false,
-    icon: 'location-outline',
-  },
-];
 
 // ---------------- Notifications ----------------
 export async function getNotificationState(): Promise<PermissionState> {
@@ -58,7 +29,7 @@ export async function requestNotifications(): Promise<PermissionState> {
   if (current.granted) return 'granted';
   if (!current.canAskAgain) {
     // Android won't show the dialog again — the user must enable it in Settings.
-    await openAppSettings();
+    await openNotificationSettings();
     return 'denied';
   }
   const asked = await Notifications.requestPermissionsAsync();
@@ -73,8 +44,12 @@ export async function getLocationState(): Promise<PermissionState> {
   return 'denied';
 }
 
-/** Asks for the OS location permission. Does NOT turn on sharing by itself. */
-export async function requestLocationPermission(): Promise<PermissionState> {
+/**
+ * Ask Android for location while Bond is in use (the first of Android's two
+ * location steps). Only the permission: it never turns on sharing. If
+ * Android won't ask again, opens Bond's App info instead.
+ */
+export async function requestLocationForeground(): Promise<PermissionState> {
   const current = await Location.getForegroundPermissionsAsync();
   if (current.granted) return 'granted';
   if (!current.canAskAgain) {
@@ -85,12 +60,24 @@ export async function requestLocationPermission(): Promise<PermissionState> {
   return asked.granted ? 'granted' : asked.canAskAgain ? 'undetermined' : 'denied';
 }
 
-export async function getFeatureState(key: FeatureKey): Promise<PermissionState> {
-  return key === 'notifications' ? getNotificationState() : getLocationState();
-}
+const ANDROID_PACKAGE = 'com.bond.couple';
 
-export async function requestFeature(key: FeatureKey): Promise<PermissionState> {
-  return key === 'notifications' ? requestNotifications() : requestLocationPermission();
+/**
+ * Bond's own notification page in Android Settings (where the switch is),
+ * falling back to App info on devices that don't support it.
+ */
+export async function openNotificationSettings(): Promise<void> {
+  if (Platform.OS === 'android') {
+    try {
+      await Linking.sendIntent('android.settings.APP_NOTIFICATION_SETTINGS', [
+        { key: 'android.provider.extra.APP_PACKAGE', value: ANDROID_PACKAGE },
+      ]);
+      return;
+    } catch {
+      // fall back to App info
+    }
+  }
+  await openAppSettings();
 }
 
 export async function openAppSettings(): Promise<void> {
@@ -101,9 +88,3 @@ export async function openAppSettings(): Promise<void> {
   }
 }
 
-/**
- * Screen Time needs Android's Usage Access, which depends on the native Bond
- * module that isn't in this build yet. Kept as a single flag so screens can
- * stay honest; it flips to true only when that native support actually ships.
- */
-export const USAGE_ACCESS_AVAILABLE: boolean = false;

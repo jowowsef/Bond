@@ -93,3 +93,25 @@ export function approvalDescription(action: ApprovalAction, requesterName: strin
       return `${requesterName} sent a request.`;
   }
 }
+
+/**
+ * Location sharing is now each person's own switch (no approval). Withdraw
+ * any "turn off location" request I sent under the old flow, so my partner
+ * approving it later can never switch my sharing off unexpectedly.
+ * Returns false only if a request could not be withdrawn.
+ */
+export async function withdrawMyLocationOffRequests(userId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('approval_requests')
+    .select('id')
+    .eq('requester_id', userId)
+    .eq('action', 'location_off')
+    .eq('status', 'pending');
+  if (error) return false;
+  let ok = true;
+  for (const row of (data as { id: string }[]) ?? []) {
+    const r = await cancelApproval(row.id);
+    if (!r.ok) ok = false;
+  }
+  return ok;
+}

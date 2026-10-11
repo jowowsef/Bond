@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { initials } from '@/lib/format';
-import { colors, fontFamily } from '@/lib/theme';
+import { colors, fontFamily, useThemeVersion } from '@/lib/theme';
 
 /**
- * A round profile picture. If there's no image URL we show the person's
- * initials instead. Pass `tint` to colour the circle (e.g. sky blue for
- * you, blush pink for your partner); without it we use the soft primary.
+ * A round profile picture. The person's initials always sit underneath, and
+ * the photo (when there is one) is laid on top. So while the photo is still
+ * loading, or if its link has expired or fails, you see the initials instead
+ * of an empty circle. Pass `tint` to color the circle (e.g. the person's
+ * chosen Blue or Pink); without it we use the soft primary.
  */
 export function Avatar({
   name,
@@ -21,12 +23,16 @@ export function Avatar({
   ring?: string;
   tint?: string;
 }) {
+  useThemeVersion();
+  const [failed, setFailed] = useState(false);
+  // A new photo link gets a fresh chance to load.
+  useEffect(() => {
+    setFailed(false);
+  }, [url]);
+
   const ringStyle = ring ? { borderWidth: 2, borderColor: ring } : null;
   const base = { width: size, height: size, borderRadius: size / 2 };
 
-  if (url) {
-    return <Image source={{ uri: url }} style={[base, ringStyle]} />;
-  }
   return (
     <View style={[base, styles.fallback, { backgroundColor: tint ?? colors.primarySoft }, ringStyle]}>
       <Text
@@ -39,10 +45,17 @@ export function Avatar({
       >
         {initials(name)}
       </Text>
+      {url && !failed ? (
+        <Image
+          source={{ uri: url }}
+          style={[StyleSheet.absoluteFill, { borderRadius: size / 2 }]}
+          onError={() => setFailed(true)}
+        />
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  fallback: { alignItems: 'center', justifyContent: 'center' },
+  fallback: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
 });

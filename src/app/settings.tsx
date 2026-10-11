@@ -1,24 +1,38 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
+import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
+import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, AppState, Image, Linking, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { BackHeader } from '@/components/BackHeader';
+import { StackHeader } from '@/components/HeaderBar';
+import { AccountProtection } from '@/components/AccountProtection';
+import { BackgroundLocationStatus } from '@/components/BackgroundLocationStatus';
+import { DeleteAccountModal } from '@/components/DeleteAccountModal';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { SectionHeader } from '@/components/SectionHeader';
 import { StatusBadge } from '@/components/StatusBadge';
+import { ThemePicker } from '@/components/ThemePicker';
+import { UnpairConfirmModal } from '@/components/UnpairConfirmModal';
 import { AVATAR_CHOICES, type AvatarColor } from '@/lib/avatar';
+import { reconcileBackgroundService } from '@/lib/backgroundService';
 import { disableBatterySharing, enableBatterySharing } from '@/lib/battery';
-import { enableLocationSharing } from '@/lib/location';
+import { currentAppStatusText, useCurrentAppSharing, type CurrentAppStatus } from '@/hooks/useCurrentAppSharing';
+import { useLocationSharingSwitch } from '@/hooks/useLocationSharingSwitch';
+import { askConfirm, confirmSharing, confirmStopSharing } from '@/lib/consent';
+import { possessive } from '@/lib/format';
 import { displayCode, updateDisplayName } from '@/lib/pairing';
 import { removeAvatarPhoto, uploadAvatarPhoto } from '@/lib/profilePhoto';
 import { requestApproval } from '@/lib/requests';
+import { getUsageSupport, hasUsageAccess } from '@/lib/screenTime';
+import { readCalendarReminders, setCalendarReminders } from '@/lib/calendar';
 import { supabase } from '@/lib/supabase';
-import { colors, font, radius, spacing } from '@/lib/theme';
+import { requestUsageAccess } from '@/lib/usageAccessFlow';
+import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import type { PrivacySettings } from '@/lib/types';
 import { useCouple } from '@/state/couple';
 
@@ -26,12 +40,50 @@ import { useCouple } from '@/state/couple';
  * SETTINGS (opened from the gear in each tab's header).
  *
  * Real actions: edit name, copy code, privacy visibility toggles, and the
- * approval-based unpair. Turning location sharing OFF needs partner approval,
- * so that switch sends a request instead of flipping immediately.
+ * approval-based unpair. Every sharing switch (including location) is the
+ * person's own choice and takes effect immediately.
+ *
+ * Also opened from Show Code / Enter Code while NOT paired: then it shows
+ * only what applies without a partner (profile, account, appearance, device
+ * permissions, about, log out). No partner information, sharing switches or
+ * unpair controls are shown, and nothing assumes a couple exists.
  */
 export default function Settings() {
+  useThemeVersion();
   const router = useRouter();
-  const { myProfile, partnerProfile, couple, userId, refresh, outgoingRequests } = useCouple();
+  const { phase, session, myProfile, partnerProfile, couple, userId, refresh, outgoingRequests, resetSession, pairingSetup } = useCouple();
+  const paired = phase === 'paired';
+  // Email / Google accounts can sign in again; an anonymous one could not, so
+  // it gets no Log out (that would lose the account).
+  const canLogOut = !!session && !session.user.is_anonymous;
+  const appVersion = Constants.expoConfig?.version ?? null;
+  // Hidden: tap Version 7 times to open the background diagnostics (testing).
+  const versionTaps = useRef({ count: 0, at: 0 });
+  const onVersionTap = () => {
+    const now = Date.now();
+    const t = versionTaps.current;
+    t.count = now - t.at < 1500 ? t.count + 1 : 1;
+    t.at = now;
+    if (t.count >= 7) {
+      t.count = 0;
+      router.push('/background-diagnostics');
+    }
+  };
+  const [loggingOut, setLoggingOut] = useState(false);
+  // My own calendar reminders preference (null = not available yet: 0012 not applied).
+  const [calReminders, setCalReminders] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!userId || phase !== 'paired') return;
+    void readCalendarReminders(userId).then(setCalReminders);
+  }, [userId, phase]);
+  async function onCalendarReminders(next: boolean) {
+    if (!userId) return;
+    setCalReminders(next);
+    if (!(await setCalendarReminders(userId, next))) {
+      setCalReminders(!next);
+      Alert.alert('Not saved', 'Could not change this. Check your connection and try again.');
+    }
+  }
 
   const [name, setName] = useState(myProfile?.display_name ?? '');
   const [copied, setCopied] = useState(false);
@@ -41,6 +93,25 @@ export default function Settings() {
   // Photo adjustment modal: a picked+cropped image waiting for Save/Cancel.
   const [pendingPhoto, setPendingPhoto] = useState<{ uri: string; base64: string } | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [unpairOpen, setUnpairOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  // Low battery alerts need notifications allowed on THIS phone (read, never requested here).
+  const [notificationsOn, setNotificationsOn] = useState<boolean | null>(null);
+  // Android's Usage access, read fresh (also when coming back from Android Settings).
+  const [usageAccess, setUsageAccess] = useState(() => hasUsageAccess());
+  useEffect(() => {
+    const check = () => {
+      setUsageAccess(hasUsageAccess());
+      void Notifications.getPermissionsAsync()
+        .then((p) => setNotificationsOn(p.granted))
+        .catch(() => setNotificationsOn(null));
+    };
+    check();
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') check();
+    });
+    return () => sub.remove();
+  }, []);
 
   const nameChanged = name.trim().length > 0 && name.trim() !== (myProfile?.display_name ?? '');
   const hasPhoto = !!myProfile?.avatar_path;
@@ -60,7 +131,6 @@ export default function Settings() {
   }, [loadPrivacy]);
 
   const unpairPending = outgoingRequests.some((r) => r.action === 'unpair');
-  const locationOffPending = outgoingRequests.some((r) => r.action === 'location_off');
 
   async function saveName() {
     if (!userId) return;
@@ -137,69 +207,79 @@ export default function Settings() {
 
   async function onToggleBattery(next: boolean) {
     if (!userId) return;
+    if (next && !(await confirmSharing('battery', partnerName))) return;
+    if (!next && !(await confirmStopSharing('battery', partnerName))) return; // Cancel: nothing changes
     setPrivacy((p) => (p ? { ...p, share_battery: next } : p));
     const result = next ? await enableBatterySharing(userId) : await disableBatterySharing(userId);
     if (!result.ok) {
       Alert.alert('Could not update', result.message ?? 'Please try again.');
       await loadPrivacy();
     }
+    // Start / stop the battery part of the background service to match.
+    if (phase === 'paired' && pairingSetup === 'done') await reconcileBackgroundService(userId, partnerName).catch(() => null);
   }
 
-  async function setVisibility(field: 'share_screen_time' | 'share_activity' | 'share_battery', value: boolean) {
-    if (!userId) return;
+  async function setVisibility(
+    field: 'share_screen_time' | 'share_battery',
+    value: boolean,
+  ): Promise<boolean> {
+    if (!userId) return false;
     setPrivacy((p) => (p ? { ...p, [field]: value } : p));
-    await supabase.from('privacy_settings').update({ [field]: value }).eq('user_id', userId);
-  }
-
-  async function onToggleLocation(next: boolean) {
-    if (!userId) return;
-    if (next) {
-      // Turning ON is your own choice — grant the OS permission and start sharing.
-      const result = await enableLocationSharing(userId);
-      if (!result.ok) {
-        Alert.alert('Location not enabled', result.message ?? 'Please try again.');
-        return;
-      }
-      await loadPrivacy();
-    } else {
-      // Turning OFF is a shared change → ask the partner to approve.
-      const result = await requestApproval('location_off');
-      if (!result.ok) {
-        Alert.alert('Could not send request', result.message);
-        return;
-      }
-      Alert.alert('Request sent', `${partnerName} needs to approve turning your location sharing off.`);
+    const { error } = await supabase.from('privacy_settings').update({ [field]: value }).eq('user_id', userId);
+    if (error) {
+      // Show the real (saved) state again instead of a switch that lies.
+      setPrivacy((p) => (p ? { ...p, [field]: !value } : p));
+      Alert.alert('Not saved', 'Could not save this setting. Check your connection and try again.');
+      return false;
     }
+    return true;
   }
 
   function onUnpair() {
-    Alert.alert(
-      'Request to unpair?',
-      `Unpairing affects both of you. ${partnerName} will need to approve it before you're disconnected. You won't be unpaired on your own.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Send request',
-          style: 'destructive',
-          onPress: async () => {
-            const result = await requestApproval('unpair');
-            if (!result.ok) {
-              Alert.alert('Could not send request', result.message);
-              return;
-            }
-            Alert.alert('Request sent', `${partnerName} needs to approve before you're unpaired.`);
-          },
-        },
-      ],
-    );
+    if (unpairPending) return;
+    setUnpairOpen(true);
+  }
+
+  /** Sends the unpair request; the modal shows loading / errors / success. */
+  async function sendUnpairRequest(): Promise<{ ok: boolean; message?: string }> {
+    const result = await requestApproval('unpair');
+    if (!result.ok) return { ok: false, message: result.message };
+    await refresh(); // shows "Unpair request pending" right away
+    return { ok: true };
   }
 
   const partnerName = partnerProfile?.display_name ?? 'Your partner';
+  // "Denize's" (or "your partner's" when the name isn't known yet).
+  const knownPartner = partnerProfile?.display_name?.trim();
+  const batteryAlertName = knownPartner && knownPartner !== 'Me' ? possessive(knownPartner) : "your partner's";
   const locationOn = !!privacy?.share_location;
+  const currentApp = useCurrentAppSharing(paired ? userId : null, partnerName);
+
+  async function onLogOut() {
+    if (loggingOut) return;
+    const ok = await askConfirm(
+      'Log out?',
+      'You can sign in again anytime with the same email or Google account. Your account and its data stay as they are.',
+      'Log out',
+      'Cancel',
+    );
+    if (!ok) return;
+    setLoggingOut(true);
+    await resetSession(); // this phone only; also stops background location
+    setLoggingOut(false);
+    if (router.canDismiss()) router.dismissAll();
+    router.replace('/welcome');
+  }
+  // Own switch only, no partner approval. Same logic as the Location tab.
+  const locationSwitch = useLocationSharingSwitch({
+    userId,
+    partnerName,
+    onChanged: () => Promise.all([loadPrivacy(), refresh()]),
+  });
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <BackHeader title="Settings" />
+      <StackHeader title="Settings" />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Profile */}
         <SectionHeader title="Profile" />
@@ -264,6 +344,16 @@ export default function Settings() {
           </View>
         </Card>
 
+        {/* Account protection: link an email + password to THIS account */}
+        <SectionHeader title="Account" />
+        {userId ? <AccountProtection userId={userId} /> : null}
+
+        {/* Appearance: light / dark / follow the phone */}
+        <SectionHeader title="Appearance" />
+        <ThemePicker />
+
+        {paired ? (
+          <>
         {/* Couple */}
         <SectionHeader title="Couple" />
         <Card>
@@ -274,12 +364,72 @@ export default function Settings() {
               label="Pairing code"
               value={displayCode(couple?.invite_code)}
               right={<StatusBadge label={copied ? 'Copied' : 'Copy'} tone="primary" />}
+              last
             />
           </Pressable>
-          <Pressable onPress={() => router.push('/optional-setup')}>
-            <Row icon="options-outline" label="Device setup" chevron last />
-          </Pressable>
         </Card>
+
+        {/* Currently Using: its own section, easy to find */}
+        <SectionHeader title="Currently Using" />
+        <Card>
+          <SwitchRow
+            icon="phone-portrait-outline"
+            label="Share the app I'm using"
+            sub={`${partnerName} sees the name of the app open on your phone and when it was last checked. Only the latest app, never a history, and nothing inside apps.`}
+            value={currentApp.switchValue}
+            disabled={currentApp.switchDisabled}
+            onChange={currentApp.toggle}
+          />
+          <InfoRow
+            icon={currentApp.status === 'needs-access' ? 'alert-circle-outline' : 'pulse-outline'}
+            label="Status"
+            sub={currentAppStatusText(currentApp.status, partnerName, currentApp.ready)}
+            right={<CurrentAppBadge status={currentApp.status} busy={currentApp.busy} />}
+            last={currentApp.status !== 'needs-access' && !(currentApp.notificationsOff && currentApp.switchValue)}
+          />
+          {currentApp.status === 'needs-access' ? (
+            <View style={[styles.actionRow, !(currentApp.notificationsOff && currentApp.switchValue) ? null : styles.divider]}>
+              <View style={styles.photoButtons}>
+                <Button label="Open Usage access settings" small onPress={currentApp.openAccessSettings} />
+                {/* The switch shows OFF while blocked; this ends the saved choice too. */}
+                <Button label="Turn off sharing" small variant="ghost" onPress={() => currentApp.toggle(false)} />
+              </View>
+            </View>
+          ) : null}
+          {currentApp.notificationsOff && currentApp.switchValue ? (
+            <View style={styles.actionRow}>
+              <Text style={styles.rowSub}>
+                Notifications are off for Bond, so Android hides the sharing notification. Sharing still works.
+              </Text>
+              <Button label="Allow notifications" small variant="secondary" onPress={currentApp.allowNotifications} style={{ marginTop: spacing.sm }} />
+            </View>
+          ) : null}
+        </Card>
+        {currentApp.error ? (
+          <Text style={[styles.note, { color: colors.danger }]}>
+            {currentApp.error}{' '}
+            <Text style={{ fontWeight: '700', color: colors.primary }} onPress={currentApp.retry}>
+              Try again
+            </Text>
+          </Text>
+        ) : null}
+
+        {/* Calendar reminders (each person decides for themselves) */}
+        {calReminders !== null ? (
+          <>
+            <SectionHeader title="Calendar" />
+            <Card>
+              <SwitchRow
+                icon="calendar-outline"
+                label="Calendar reminders"
+                sub={calReminders ? 'Notifications for shared events that have a reminder' : 'Off: no reminders on this account'}
+                value={calReminders}
+                onChange={(v) => void onCalendarReminders(v)}
+                last
+              />
+            </Card>
+          </>
+        ) : null}
 
         {/* Privacy */}
         <SectionHeader title="Privacy" />
@@ -287,51 +437,96 @@ export default function Settings() {
           <SwitchRow
             icon="location-outline"
             label="Location sharing"
-            sub={
-              locationOffPending
-                ? 'Waiting for approval to turn off'
-                : locationOn
-                  ? 'On (turning off needs approval)'
-                  : 'Off'
-            }
-            value={locationOn}
-            disabled={locationOffPending}
-            onChange={onToggleLocation}
+            sub={locationOn ? `${partnerName} can see your location` : 'Off'}
+            value={locationSwitch.pending ?? locationOn}
+            disabled={locationSwitch.busy}
+            onChange={locationSwitch.request}
           />
+          <BackgroundLocationStatus sharing={locationOn} partnerName={partnerName} style={styles.divider} />
           <SwitchRow
             icon="battery-half-outline"
             label="Battery sharing"
-            sub={privacy?.share_battery ? 'Your partner can see your battery' : 'Off'}
+            sub={privacy?.share_battery ? 'On. Sent in the background (quiet notification).' : 'Off'}
             value={privacy?.share_battery ?? false}
             onChange={onToggleBattery}
+          />
+          {/* Automatic for paired couples (no switch). Needs notifications on THIS phone. */}
+          <InfoRow
+            icon="notifications-outline"
+            label="Low battery alerts"
+            sub={`Get notified when ${batteryAlertName} battery is low.`}
+            right={
+              notificationsOn === null ? null : notificationsOn ? (
+                <StatusBadge label="On" tone="success" dot />
+              ) : (
+                <Pressable
+                  onPress={() => void Linking.openSettings()}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Notifications are off. Open settings to allow them."
+                >
+                  <StatusBadge label="Notifications off" tone="warning" />
+                </Pressable>
+              )
+            }
           />
           <SwitchRow
             icon="time-outline"
             label="Screen-time visibility"
-            value={privacy?.share_screen_time ?? true}
-            onChange={(v) => setVisibility('share_screen_time', v)}
-          />
-          <SwitchRow
-            icon="pulse-outline"
-            label="Activity visibility"
-            value={privacy?.share_activity ?? true}
-            onChange={(v) => setVisibility('share_activity', v)}
+            sub={
+              privacy?.share_screen_time && getUsageSupport() === 'ready' && !usageAccess
+                ? 'On, but Usage access is off on this phone, so nothing is sent'
+                : undefined
+            }
+            value={privacy?.share_screen_time ?? false}
+            onChange={(v) =>
+              void (async () => {
+                if (v && !(await confirmSharing('screen_time', partnerName))) return;
+                if (!v && !(await confirmStopSharing('screen_time', partnerName))) return;
+                await setVisibility('share_screen_time', v);
+              })()
+            }
             last
           />
         </Card>
+        {privacy?.share_screen_time && getUsageSupport() === 'ready' && !usageAccess ? (
+          <Text
+            style={[styles.note, { color: colors.warning }]}
+            onPress={() => void requestUsageAccess('Screen time can only be sent once Android allows Bond to read app usage.')}
+          >
+            Turn on Usage access so your screen time can be sent.
+          </Text>
+        ) : null}
         <Text style={styles.note}>
-          Visibility controls what {partnerName} can see. Turning location sharing off is a shared change, so it needs
-          their approval.
+          Visibility controls what {partnerName} can see. You can turn any of these on or off yourself at any time.
         </Text>
 
-        {/* Permissions */}
+          </>
+        ) : (
+          <>
+            <SectionHeader title="Sharing & permissions" />
+            <Card>
+              <InfoRow
+                icon="lock-closed-outline"
+                label="No partner connected"
+                sub="Nothing is shared while you are not paired. After you pair, Bond asks again before anything is shared."
+                last
+              />
+            </Card>
+          </>
+        )}
+
+        {/* Permissions: one entry for everything Android needs to allow
+            (notifications, location, Usage access, background battery use). */}
         <SectionHeader title="Permissions" />
         <Card>
-          <Pressable onPress={() => router.push('/optional-setup')}>
-            <Row icon="shield-checkmark-outline" label="Manage permissions" chevron last />
+          <Pressable onPress={() => router.push({ pathname: '/optional-setup', params: { from: 'settings' } })} accessibilityRole="button">
+            <Row icon="shield-checkmark-outline" label="Device permissions" chevron last />
           </Pressable>
         </Card>
 
+        {paired ? (
+          <>
         {/* Danger zone */}
         <SectionHeader title="Pairing" />
         <Card>
@@ -349,6 +544,48 @@ export default function Settings() {
         <Text style={styles.note}>
           Unpairing needs both partners to agree — one person can't disconnect the couple on their own.
         </Text>
+          </>
+        ) : null}
+
+        {/* Legal + data */}
+        <SectionHeader title="About Bond & your data" />
+        <Card>
+          {appVersion ? (
+            <Pressable onPress={onVersionTap}>
+              <Row icon="information-circle-outline" label="Version" value={appVersion} />
+            </Pressable>
+          ) : null}
+          {__DEV__ ? (
+            <Pressable onPress={() => router.push('/background-diagnostics')} accessibilityRole="button">
+              <Row icon="pulse-outline" label="Background diagnostics (dev)" chevron />
+            </Pressable>
+          ) : null}
+          <Pressable onPress={() => router.push('/privacy')} accessibilityRole="button">
+            <Row icon="document-text-outline" label="Privacy Policy" chevron />
+          </Pressable>
+          <Pressable onPress={() => router.push('/terms')} accessibilityRole="button">
+            <Row icon="reader-outline" label="Terms of Use" chevron />
+          </Pressable>
+          <Pressable onPress={() => setDeleteOpen(true)} accessibilityRole="button">
+            <Row icon="trash-outline" label="Delete account" danger chevron last />
+          </Pressable>
+        </Card>
+        <Text style={styles.note}>
+          {paired ? `${partnerName} only sees what your Privacy switches allow. ` : ''}Deleting your account permanently
+          removes your data from Bond.
+        </Text>
+
+        {canLogOut ? (
+          <>
+            <SectionHeader title="Log out" />
+            <Card>
+              <Pressable onPress={() => void onLogOut()} disabled={loggingOut} accessibilityRole="button">
+                <Row icon="log-out-outline" label={loggingOut ? 'Logging out…' : 'Log out'} last />
+              </Pressable>
+            </Card>
+            <Text style={styles.note}>Logging out keeps your account. Sign in again with the same email or Google account.</Text>
+          </>
+        ) : null}
 
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
@@ -371,11 +608,51 @@ export default function Settings() {
           </View>
         </View>
       </Modal>
+
+      {userId ? (
+        <DeleteAccountModal
+          visible={deleteOpen}
+          userId={userId}
+          partnerName={partnerName}
+          paired={!!partnerProfile}
+          onClose={() => setDeleteOpen(false)}
+        />
+      ) : null}
+      <UnpairConfirmModal
+        visible={unpairOpen}
+        mode="request"
+        partnerName={partnerName}
+        onCancel={() => setUnpairOpen(false)}
+        onConfirm={sendUnpairRequest}
+        onFinished={() => setUnpairOpen(false)}
+      />
     </SafeAreaView>
   );
 }
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
+
+/** Truthful service / sharing state for the Currently Using section. */
+function CurrentAppBadge({ status, busy }: { status: CurrentAppStatus; busy: boolean }) {
+  useThemeVersion();
+  if (busy || status === 'loading') return <StatusBadge label="…" tone="neutral" />;
+  switch (status) {
+    case 'running':
+      return <StatusBadge label="Running" tone="success" dot />;
+    case 'starting':
+      return <StatusBadge label="Starting" tone="warning" />;
+    case 'open-only':
+      return <StatusBadge label="Limited" tone="warning" />;
+    case 'needs-access':
+      return <StatusBadge label="Needs permission" tone="warning" />;
+    case 'off':
+      return <StatusBadge label="Off" tone="neutral" />;
+    case 'error':
+      return <StatusBadge label="Error" tone="warning" />;
+    default:
+      return <StatusBadge label="Unavailable" tone="neutral" />;
+  }
+}
 
 function Row({
   icon,
@@ -394,6 +671,7 @@ function Row({
   chevron?: boolean;
   last?: boolean;
 }) {
+  useThemeVersion();
   const color = danger ? colors.danger : colors.text;
   return (
     <View style={[styles.row, !last && styles.divider]}>
@@ -404,6 +682,33 @@ function Row({
         {right}
         {chevron ? <Ionicons name="chevron-forward" size={18} color={colors.muted} /> : null}
       </View>
+    </View>
+  );
+}
+
+/** A settings row with a description and optional status on the right (no switch). */
+function InfoRow({
+  icon,
+  label,
+  sub,
+  right,
+  last,
+}: {
+  icon: IconName;
+  label: string;
+  sub?: string;
+  right?: React.ReactNode;
+  last?: boolean;
+}) {
+  useThemeVersion();
+  return (
+    <View style={[styles.row, !last && styles.divider]}>
+      <Ionicons name={icon} size={18} color={colors.primary} style={styles.rowIcon} />
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.rowLabel, { color: colors.text }]}>{label}</Text>
+        {sub ? <Text style={styles.rowSub}>{sub}</Text> : null}
+      </View>
+      {right}
     </View>
   );
 }
@@ -425,6 +730,7 @@ function SwitchRow({
   disabled?: boolean;
   last?: boolean;
 }) {
+  useThemeVersion();
   return (
     <View style={[styles.row, !last && styles.divider]}>
       <Ionicons name={icon} size={18} color={colors.primary} style={styles.rowIcon} />
@@ -443,7 +749,7 @@ function SwitchRow({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.lg, paddingTop: 0 },
   profileRow: { flexDirection: 'row', alignItems: 'center' },
@@ -483,7 +789,8 @@ const styles = StyleSheet.create({
   rowIcon: { marginRight: spacing.md, width: 22, textAlign: 'center' },
   rowLabel: { ...font.body, flex: 1 },
   rowSub: { ...font.small, color: colors.muted, marginTop: 2 },
+  actionRow: { paddingVertical: spacing.md },
   rowRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   rowValue: { ...font.body, color: colors.subtext },
   note: { ...font.small, color: colors.muted, marginTop: spacing.sm, marginHorizontal: spacing.xs, lineHeight: 18 },
-});
+}));

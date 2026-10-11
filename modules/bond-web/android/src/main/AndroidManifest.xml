@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Bond Web Protection. Android merges this into the app manifest.
+
+  - The VPN service only ever receives DNS lookups (see WebFilterVpnService).
+    BIND_VPN_SERVICE means only Android itself can connect to it.
+  - RECEIVE_BOOT_COMPLETED: turn the filter back on after a restart if the
+    phone's owner left it on (only works once they have allowed the VPN).
+  No other permissions: no location, no contacts, no browsing history.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+  <application>
+    <service
+        android:name="com.bond.web.WebFilterVpnService"
+        android:exported="true"
+        android:permission="android.permission.BIND_VPN_SERVICE">
+      <intent-filter>
+        <action android:name="android.net.VpnService" />
+      </intent-filter>
+    </service>
+
+    <receiver
+        android:name="com.bond.web.WebFilterBootReceiver"
+        android:exported="false">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
+  </application>
+</manifest>

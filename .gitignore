@@ -39,3 +39,17 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# phone diagnostic logs (contain personal device data)
+bond-*.txt
+
+# built apps (publish APKs through GitHub Releases, not the repo)
+*.apk
+*.aab
+
+# Supabase CLI local cache
+supabase/.temp/
+
+# internal security notes (not for the public repo)
+notes/SECURITY_AUDIT.md
+notes/LAUNCH_CHECKLIST.md

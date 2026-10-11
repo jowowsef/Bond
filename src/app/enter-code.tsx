@@ -1,12 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Redirect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
+import { Redirect } from '@/components/Redirect';
 import React, { useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BackHeader } from '@/components/BackHeader';
+import { GearButton } from '@/components/GearButton';
 import { Button } from '@/components/Button';
 import { joinCouple, normalizeCode, unpair } from '@/lib/pairing';
-import { colors, font, fontFamily, radius, spacing } from '@/lib/theme';
+import { colors, font, fontFamily, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
 /**
@@ -19,6 +21,7 @@ import { useCouple } from '@/state/couple';
  * abandon that empty couple first so joining the partner's code succeeds.
  */
 export default function EnterCode() {
+  useThemeVersion();
   const router = useRouter();
   const { phase, refresh } = useCouple();
   const [code, setCode] = useState('');
@@ -26,8 +29,8 @@ export default function EnterCode() {
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
 
-  // Already connected (and not mid-success-animation) → straight to the app.
-  if (phase === 'paired' && !connected) return <Redirect href="/(tabs)" />;
+  // Already connected (and not mid-success-animation): the start screen decides.
+  if (phase === 'paired' && !connected) return <Redirect href="/" />;
 
   async function onConnect() {
     setError(null);
@@ -57,7 +60,8 @@ export default function EnterCode() {
     await refresh();
     setLoading(false);
     setConnected(true);
-    setTimeout(() => router.replace('/name-setup'), 1400);
+    // Then the start screen begins this pairing's setup (Sharing setup first).
+    setTimeout(() => router.replace('/'), 1400);
   }
 
   if (connected) {
@@ -74,7 +78,7 @@ export default function EnterCode() {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <BackHeader title="Enter Their Code" />
+      <BackHeader title="Enter Their Code" right={<GearButton />} />
       <View style={styles.body}>
         <Text style={styles.subtitle}>Enter the pairing code shown on your partner's device.</Text>
 
@@ -104,7 +108,7 @@ export default function EnterCode() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.background },
   body: { flex: 1, padding: spacing.xl, paddingTop: spacing.md },
   subtitle: { ...font.body, color: colors.subtext, marginBottom: spacing.xl },
@@ -136,4 +140,4 @@ const styles = StyleSheet.create({
   },
   successTitle: { ...font.title, color: colors.text },
   successText: { ...font.body, color: colors.subtext, marginTop: spacing.sm, textAlign: 'center' },
-});
+}));

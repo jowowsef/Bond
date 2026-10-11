@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { Card } from './Card';
-import { colors, font, radius, spacing } from '@/lib/theme';
+import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -28,6 +28,7 @@ export function NavCard({
   accentBg?: string;
   onPress?: () => void;
 }) {
+  useThemeVersion();
   return (
     <Pressable onPress={onPress} disabled={!onPress} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
       <Card style={styles.card}>
@@ -45,7 +46,7 @@ export function NavCard({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   card: { flexDirection: 'row', alignItems: 'center' },
   iconWrap: {
     width: 40,
@@ -59,4 +60,4 @@ const styles = StyleSheet.create({
   title: { ...font.h3, color: colors.text },
   subtitle: { ...font.small, color: colors.subtext, marginTop: 2 },
   right: { ...font.small, fontWeight: '700', color: colors.text },
-});
+}));

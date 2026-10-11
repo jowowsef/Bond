@@ -2,6 +2,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Session } from '@supabase/supabase-js';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
+import {
+  advancePairingSetup as advanceStoredSetup,
+  ensurePairingSharingReset,
+  noteNotPaired,
+  resolvePairingSetup,
+  type PairingSetupState,
+  type SetupStep,
+} from '@/lib/pairingSetup';
+import { stopBackgroundLocation } from '@/lib/backgroundLocation';
+import { resetCurrentAppUploads } from '@/lib/currentApp';
+import { stopCurrentAppService } from '@/lib/currentAppServiceControl';
+import { clearUnpairRecord, noteUnpaired, readUnpairRecord, runUnpairReset } from '@/lib/unpairReset';
 import { signedAvatarUrls } from '@/lib/profilePhoto';
 import { fetchPendingApprovals } from '@/lib/requests';
 import { supabase, uniqueTopic } from '@/lib/supabase';
@@ -52,7 +64,8 @@ type CoupleContextValue = {
   /**
    * Which post-pairing profile step is still needed. Derived from the saved
    * profile (so it survives restart / reinstall), null while still loading:
-   *   'name'  → hasn't chosen a display name
+   *   'name'  → hasn't chosen a display name (empty, "Me", or still the
+   *             name copied automatically from the email address)
    *   'color' → has a name but no avatar colour
    *   'done'  → profile ready → Home
    */
@@ -71,6 +84,31 @@ type CoupleContextValue = {
   refreshRequests: () => Promise<void>;
   /** Forget the anonymous session (used after unpairing). */
   resetSession: () => Promise<void>;
+  /**
+   * Setup step for the CURRENT pairing. A new pairing goes 'sharing' ->
+   * 'name' -> 'color' -> 'done'; an existing one is 'done'. 'unknown' while
+   * checking or when not paired.
+   */
+  pairingSetup: PairingSetupState;
+  /**
+   * Finish one setup step for the current couple. False when it was refused
+   * (leaving sharing setup before the new pairing's sharing reset succeeded).
+   */
+  advancePairingSetup: (from: SetupStep) => Promise<boolean>;
+  /** Retry turning sharing off for a new pairing. True = safe to continue. */
+  ensurePairingReset: () => Promise<boolean>;
+  /**
+   * After the server confirmed the couple ended (see lib/unpairReset.ts):
+   *   'none'      nothing to show,
+   *   'resetting' clearing the previous pairing's data on this account/phone,
+   *   'failed'    that could not finish yet (unpairError says why; retry),
+   *   'done'      cleared; the "You're no longer paired" screen waits for Continue.
+   */
+  unpairState: 'none' | 'resetting' | 'failed' | 'done';
+  unpairError: string | null;
+  retryUnpairReset: () => void;
+  /** Continue on the confirmation screen: the notice is not shown again. */
+  acknowledgeUnpair: () => Promise<void>;
 };
 
 const CoupleContext = createContext<CoupleContextValue | null>(null);
@@ -168,10 +206,15 @@ export function CoupleProvider({ children }: { children: React.ReactNode }) {
 
   // Post-pairing profile step, derived entirely from the saved profile so it
   // is consistent across devices and survives restart / reinstall.
+  // A name that Supabase copied from the email address (e.g. "denize.cruz")
+  // was not chosen by the person, unless Bond's name step confirmed it.
+  const autoName = session?.user.email ? session.user.email.split('@')[0] : null;
+  const nameConfirmed = session?.user.user_metadata?.bond_name_confirmed === true;
   const profileStep: 'name' | 'color' | 'done' | null = (() => {
     if (!userId || !myProfile) return null; // still loading
     const name = myProfile.display_name?.trim();
     if (!name || name === 'Me') return 'name';
+    if (!nameConfirmed && autoName && name === autoName) return 'name';
     if (myProfile.avatar_color !== 'blue' && myProfile.avatar_color !== 'pink') return 'color';
     return 'done';
   })();
@@ -197,6 +240,45 @@ export function CoupleProvider({ children }: { children: React.ReactNode }) {
   }, [myPath, partnerPath]);
 
   const myAvatarUrl = myPath ? avatarUrls[myPath] ?? null : null;
+
+  // --- Sharing setup for the current pairing (see lib/pairingSetup.ts) ---
+  const [pairingSetup, setPairingSetup] = useState<PairingSetupState>('unknown');
+  const setupCoupleId = couple?.id ?? null;
+  const fullCouple = members.length >= 2;
+  useEffect(() => {
+    if (!userId || !setupCoupleId || !fullCouple) {
+      setPairingSetup('unknown');
+      return;
+    }
+    let cancelled = false;
+    setPairingSetup('unknown');
+    void resolvePairingSetup(userId, setupCoupleId)
+      .then((state) => {
+        if (!cancelled) setPairingSetup(state);
+      })
+      .catch(() => {
+        if (!cancelled) setPairingSetup('sharing'); // when unsure, ask again rather than share silently
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, setupCoupleId, fullCouple]);
+
+  const advancePairingSetup = useCallback(
+    async (from: SetupStep) => {
+      if (!userId || !setupCoupleId) return false;
+      const next = await advanceStoredSetup(userId, setupCoupleId, from);
+      if (!next) return false;
+      setPairingSetup(next);
+      return true;
+    },
+    [userId, setupCoupleId],
+  );
+
+  const ensurePairingReset = useCallback(async () => {
+    if (!userId || !setupCoupleId) return false;
+    return ensurePairingSharingReset(userId, setupCoupleId);
+  }, [userId, setupCoupleId]);
   const partnerAvatarUrl = partnerPath ? avatarUrls[partnerPath] ?? null : null;
 
   // --- Restore the saved session, then follow sign-in / sign-out ---
@@ -215,17 +297,66 @@ export function CoupleProvider({ children }: { children: React.ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  // --- Unpair: the server confirmed the couple ended (see lib/unpairReset.ts) ---
+  const [unpairState, setUnpairState] = useState<'none' | 'resetting' | 'failed' | 'done'>('none');
+  const [unpairError, setUnpairError] = useState<string | null>(null);
+  /** The couple this phone last KNEW for the user (cache or server), to recognise an unpair. */
+  const knownCoupleRef = useRef<{ uid: string; coupleId: string | null; full: boolean } | null>(null);
+  const resetRunning = useRef(false);
+
+  const startUnpairReset = useCallback(async (uid: string) => {
+    if (resetRunning.current) return; // one reset at a time
+    resetRunning.current = true;
+    setUnpairState('resetting');
+    setUnpairError(null);
+    try {
+      const result = await runUnpairReset(uid);
+      if (userIdRef.current !== uid) return;
+      if (result.ok) {
+        // Show the reset profile (name, color, photo back to defaults).
+        const fresh = await fetchSnapshot(uid);
+        if (fresh.ok && userIdRef.current === uid) {
+          setSnapshot(fresh.snapshot);
+          await writeCache(uid, fresh.snapshot);
+        }
+        setUnpairState('done');
+      } else {
+        setUnpairError(result.message);
+        setUnpairState('failed');
+      }
+    } finally {
+      resetRunning.current = false;
+    }
+  }, []);
+
   /** Apply a fresh server answer for `uid` (ignored if the user changed meanwhile). */
   const applyServer = useCallback(async (uid: string): Promise<boolean> => {
     const result = await fetchSnapshot(uid);
     if (userIdRef.current && userIdRef.current !== uid) return false;
     if (!result.ok) return false;
-    setSnapshot(result.snapshot);
+    const before = knownCoupleRef.current;
+    const next = result.snapshot;
+    knownCoupleRef.current = { uid, coupleId: next.couple?.id ?? null, full: next.members.length >= 2 };
+    // Confirmed by the server: this account WAS paired and now has no couple.
+    const justUnpaired = !!before && before.uid === uid && !!before.coupleId && before.full && !next.couple;
+    if (justUnpaired) setUnpairState('resetting'); // same render as the unpaired phase: no flash of other screens
+    setSnapshot(next);
     setKnownFor(uid);
     setLoadFailed(false);
-    await writeCache(uid, result.snapshot);
+    await writeCache(uid, next);
+    if (justUnpaired && before?.coupleId) {
+      await noteUnpaired(uid, before.coupleId).catch(() => undefined);
+      void startUnpairReset(uid);
+    } else if (next.couple && next.members.length >= 2) {
+      // Paired (again): an old notice no longer applies.
+      const record = await readUnpairRecord(uid);
+      if (record && record.coupleId !== next.couple.id) {
+        await clearUnpairRecord(uid);
+        setUnpairState('none');
+      }
+    }
     return true;
-  }, []);
+  }, [startUnpairReset]);
 
   // --- On launch / when the user changes: cache first, then the server ---
   useEffect(() => {
@@ -238,8 +369,19 @@ export function CoupleProvider({ children }: { children: React.ReactNode }) {
     }
     let cancelled = false;
     (async () => {
-      const cached = await readCache(userId);
+      const [cached, record] = await Promise.all([readCache(userId), readUnpairRecord(userId)]);
       if (cancelled) return;
+      knownCoupleRef.current = {
+        uid: userId,
+        coupleId: cached?.couple?.id ?? null,
+        full: (cached?.members.length ?? 0) >= 2,
+      };
+      if (record) {
+        // An unpair recognised earlier and not acknowledged yet: show it again,
+        // and finish the reset if it was interrupted (closed / offline).
+        setUnpairState(record.resetDone ? 'done' : 'resetting');
+        if (!record.resetDone) void startUnpairReset(userId);
+      }
       if (cached) {
         // Paired before → show the app right away; the server check below confirms it.
         setSnapshot(cached);
@@ -252,7 +394,7 @@ export function CoupleProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [authChecked, userId, applyServer]);
+  }, [authChecked, userId, applyServer, startUnpairReset]);
 
   // --- Pending approval requests (loaded SEPARATELY so a missing table or a
   //     failed request never affects pairing restore) ---
@@ -299,7 +441,7 @@ export function CoupleProvider({ children }: { children: React.ReactNode }) {
       .channel(uniqueTopic(`couple-watch-${userId}`))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'couple_members' }, () => void refresh())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => void refresh())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'approval_requests' }, () => void refreshRequests())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'approval_requests' }, () => void refresh())
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
@@ -322,7 +464,12 @@ export function CoupleProvider({ children }: { children: React.ReactNode }) {
   const resetSession = useCallback(async () => {
     const uid = userIdRef.current;
     if (uid) await AsyncStorage.removeItem(cacheKey(uid)).catch(() => undefined);
-    await supabase.auth.signOut();
+    // No background location for an account that is signed out / deleted.
+    await stopBackgroundLocation();
+    await stopCurrentAppService();
+    resetCurrentAppUploads();
+    // This phone only (the account may already be deleted on the server).
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
     setSession(null);
     setSnapshot(EMPTY);
     setKnownFor(null);
@@ -330,6 +477,21 @@ export function CoupleProvider({ children }: { children: React.ReactNode }) {
     setAuthError(false);
     setRequests([]);
     setAvatarUrls({});
+    knownCoupleRef.current = null;
+    setUnpairState('none');
+    setUnpairError(null);
+  }, []);
+
+  const retryUnpairReset = useCallback(() => {
+    const uid = userIdRef.current;
+    if (uid) void startUnpairReset(uid);
+  }, [startUnpairReset]);
+
+  const acknowledgeUnpair = useCallback(async () => {
+    const uid = userIdRef.current;
+    if (uid) await clearUnpairRecord(uid);
+    setUnpairState('none');
+    setUnpairError(null);
   }, []);
 
   const coupleKnown = !!userId && knownFor === userId;
@@ -349,6 +511,13 @@ export function CoupleProvider({ children }: { children: React.ReactNode }) {
             ? 'paired'
             : 'waiting';
 
+  // This phone shows the account unpaired or waiting: the next couple is a NEW
+  // pairing (see lib/pairingSetup.ts). Only confirmed states count; a failed
+  // request never moves the phase to 'unpaired'.
+  useEffect(() => {
+    if (userId && (phase === 'unpaired' || phase === 'waiting')) void noteNotPaired(userId);
+  }, [userId, phase]);
+
   const value: CoupleContextValue = {
     phase,
     session,
@@ -366,6 +535,13 @@ export function CoupleProvider({ children }: { children: React.ReactNode }) {
     refresh,
     refreshRequests,
     resetSession,
+    pairingSetup,
+    advancePairingSetup,
+    ensurePairingReset,
+    unpairState,
+    unpairError,
+    retryUnpairReset,
+    acknowledgeUnpair,
   };
 
   return <CoupleContext.Provider value={value}>{children}</CoupleContext.Provider>;

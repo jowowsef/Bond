@@ -1,32 +1,41 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Redirect, useRouter } from 'expo-router';
+import { Redirect } from '@/components/Redirect';
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/Button';
 import { updateDisplayName } from '@/lib/pairing';
-import { colors, font, radius, spacing } from '@/lib/theme';
+import { supabase } from '@/lib/supabase';
+import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
 /**
- * POST-PAIRING STEP 1 — "What should we call you?"
+ * NEW PAIRING, STEP 2 (after Sharing setup): "What should we call you?"
  *
- * Saves the name to profiles.display_name, then continues to the colour step
- * (NOT straight to Home). Shown again on reopen if the name isn't set yet.
+ * Saves the name to profiles.display_name, then the start screen continues to
+ * the avatar color step. Shown again on reopen until the name is saved.
+ * Also shown for an older pairing whose name was never chosen.
  */
 export default function NameSetup() {
-  const router = useRouter();
-  const { phase, userId, myProfile, profileStep, refresh } = useCouple();
+  useThemeVersion();
+  const { phase, userId, myProfile, profileStep, refresh, session, pairingSetup, advancePairingSetup } = useCouple();
 
-  const existing = myProfile?.display_name && myProfile.display_name !== 'Me' ? myProfile.display_name : '';
+  // A Google account suggests its first name; the person can change it.
+  const meta = (session?.user.user_metadata ?? {}) as { given_name?: string; full_name?: string; name?: string };
+  const suggested = (meta.given_name ?? meta.full_name ?? meta.name ?? '').trim().slice(0, 30);
+  // An automatic name copied from the email address is not offered as "yours".
+  const autoName = session?.user.email ? session.user.email.split('@')[0] : null;
+  const current = myProfile?.display_name?.trim() ?? '';
+  const existing = current && current !== 'Me' && current !== autoName ? current : suggested || current.replace(/^Me$/, '');
   const [name, setName] = useState(existing);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (phase !== 'paired' && phase !== 'loading') return <Redirect href="/" />;
-  // Name already set, move on to whatever step remains.
-  if (profileStep === 'color') return <Redirect href="/color-setup" />;
-  if (profileStep === 'done') return <Redirect href="/(tabs)" />;
+  // This screen belongs to the name step only: a new pairing at 'name', or an
+  // older pairing whose name was never chosen. Anywhere else, the start screen
+  // decides (it also moves on here once the name is saved).
+  const isMyStep = pairingSetup === 'name' || (pairingSetup === 'done' && profileStep === 'name');
+  if (phase !== 'loading' && pairingSetup !== 'unknown' && !isMyStep) return <Redirect href="/" />;
 
   async function onContinue() {
     const trimmed = name.trim();
@@ -40,9 +49,14 @@ export default function NameSetup() {
       setError(result.message ?? 'Could not save your name. Please try again.');
       return;
     }
+    // Remember that THIS person chose the name (also when it equals the email
+    // name), so the name step is not shown again. Best effort: the name itself is saved.
+    await supabase.auth.updateUser({ data: { bond_name_confirmed: true } }).catch(() => undefined);
     await refresh();
+    // New pairing: the name step is finished (saved on this phone, so a
+    // restart resumes at the color step). The screen then moves on by itself.
+    if (pairingSetup === 'name') await advancePairingSetup('name');
     setBusy(false);
-    router.replace('/color-setup');
   }
 
   const canContinue = name.trim().length > 0;
@@ -78,7 +92,7 @@ export default function NameSetup() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
   body: { flex: 1, padding: spacing.xl, justifyContent: 'center' },
@@ -98,4 +112,4 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   footer: { padding: spacing.xl, paddingTop: 0 },
-});
+}));

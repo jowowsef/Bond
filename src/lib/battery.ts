@@ -1,5 +1,6 @@
 import * as Battery from 'expo-battery';
-import { supabase } from './supabase';
+import { serviceModes, updateServiceModes } from './currentAppServiceControl';
+import { errorMessage, supabase } from './supabase';
 
 /**
  * BATTERY STATUS (real, via expo-battery)
@@ -34,17 +35,18 @@ export async function getLocalBattery(): Promise<LocalBattery> {
 export async function syncBattery(userId: string): Promise<void> {
   const local = await getLocalBattery();
   if (local.level <= 0) return; // unknown/unavailable: don't write a fake value
-  await supabase.from('battery_status').upsert({
+  const { error } = await supabase.from('battery_status').upsert({
     user_id: userId,
     level: local.level,
     is_charging: local.charging,
     updated_at: new Date().toISOString(),
   });
+  if (error) throw error;
 }
 
 export async function enableBatterySharing(userId: string): Promise<{ ok: boolean; message?: string }> {
   const { error } = await supabase.from('privacy_settings').update({ share_battery: true }).eq('user_id', userId);
-  if (error) return { ok: false, message: error.message };
+  if (error) return { ok: false, message: errorMessage(error) };
   try {
     await syncBattery(userId);
   } catch {
@@ -55,8 +57,48 @@ export async function enableBatterySharing(userId: string): Promise<{ ok: boolea
 
 export async function disableBatterySharing(userId: string): Promise<{ ok: boolean; message?: string }> {
   const { error } = await supabase.from('privacy_settings').update({ share_battery: false }).eq('user_id', userId);
-  if (error) return { ok: false, message: error.message };
+  if (error) return { ok: false, message: errorMessage(error) };
+  // Stop the battery part of the background service at once (app checks for
+  // Currently Using, if on, keep running).
+  const m = serviceModes();
+  if (m.running && m.battery) await updateServiceModes({ apps: m.apps, battery: false });
   // Remove the stored value so the partner doesn't keep seeing an old reading.
   await supabase.from('battery_status').delete().eq('user_id', userId);
   return { ok: true };
+}
+
+/**
+ * Send my battery now, but only if battery sharing is on. Used by pull to
+ * refresh and by the background job (which runs without any screen open).
+ */
+export async function syncBatteryIfSharing(userId: string): Promise<boolean> {
+  const { data, error } = await supabase.from('privacy_settings').select('share_battery').eq('user_id', userId).maybeSingle();
+  if (error) throw error;
+  if (!data?.share_battery) return false;
+  await syncBattery(userId);
+  return true;
+}
+
+/**
+ * Upload a reading the background service already took (it reacts to
+ * Android's battery broadcasts), only if battery sharing is on. The
+ * "Updated" time the partner sees is set here, when the reading actually
+ * reaches the server, never before.
+ */
+export async function uploadBatteryReading(
+  userId: string,
+  level: number,
+  charging: boolean,
+): Promise<'uploaded' | 'not-sharing' | 'failed'> {
+  if (!(level > 0 && level <= 100)) return 'failed';
+  const { data, error } = await supabase.from('privacy_settings').select('share_battery').eq('user_id', userId).maybeSingle();
+  if (error) return 'failed';
+  if (!data?.share_battery) return 'not-sharing';
+  const up = await supabase.from('battery_status').upsert({
+    user_id: userId,
+    level: Math.round(level),
+    is_charging: charging,
+    updated_at: new Date().toISOString(),
+  });
+  return up.error ? 'failed' : 'uploaded';
 }

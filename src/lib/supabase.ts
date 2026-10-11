@@ -61,5 +61,9 @@ export function errorMessage(error: unknown): string {
   if (msg.includes('Network request failed') || msg.includes('Failed to fetch')) {
     return 'No internet connection. Please try again when you are online.';
   }
+  // Database/technical wording (table names, policies, tokens) is never shown.
+  if (/violates|relation|column|permission denied|row-level security|jwt|pgrst|syntax|function|constraint|duplicate key/i.test(msg)) {
+    return 'Something went wrong. Please try again.';
+  }
   return msg;
 }

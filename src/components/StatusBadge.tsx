@@ -1,20 +1,21 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { colors, fontFamily, radius } from '@/lib/theme';
+import { colors, fontFamily, radius, themed, useThemeVersion } from '@/lib/theme';
 
 export type BadgeTone = 'neutral' | 'primary' | 'success' | 'warning' | 'danger' | 'blue';
 
-const TONES: Record<BadgeTone, { bg: string; fg: string }> = {
+const TONES: Record<BadgeTone, { bg: string; fg: string }> = themed(() => ({
   neutral: { bg: colors.border, fg: colors.subtext },
   primary: { bg: colors.primarySoft, fg: colors.primary },
   success: { bg: colors.successSoft, fg: colors.success },
   warning: { bg: colors.warningSoft, fg: colors.warning },
   danger: { bg: colors.dangerSoft, fg: colors.danger },
   blue: { bg: colors.blueSoft, fg: colors.blue },
-};
+}));
 
 /** A small rounded status label, e.g. "ON", "Pending", "Online". */
 export function StatusBadge({ label, tone = 'neutral', dot = false }: { label: string; tone?: BadgeTone; dot?: boolean }) {
+  useThemeVersion();
   const { bg, fg } = TONES[tone];
   return (
     <View style={[styles.badge, { backgroundColor: bg }]}>

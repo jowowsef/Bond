@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "902873549010",
+    "project_id": "bond-d79b2",
+    "storage_bucket": "bond-d79b2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:902873549010:android:dfb34e6fd930a40c34450b",
+        "android_client_info": {
+          "package_name": "com.bond.couple"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD5FZcqRZfkH9DRfO99_WRGIh04_9VgQeM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

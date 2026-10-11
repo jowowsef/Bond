@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
-import { colors, fontFamily, radius } from '@/lib/theme';
+import { colors, fontFamily, radius, useThemeVersion } from '@/lib/theme';
 
 /** A rounded button in one of four styles. */
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -26,6 +26,7 @@ export function Button({
   small?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
+  useThemeVersion();
   const bg: Record<Variant, string> = {
     primary: colors.primary,
     secondary: colors.primarySoft,
@@ -33,7 +34,7 @@ export function Button({
     danger: colors.dangerSoft,
   };
   const fg: Record<Variant, string> = {
-    primary: '#FFFFFF',
+    primary: colors.onPrimary,
     secondary: colors.primary,
     ghost: colors.primary,
     danger: colors.danger,

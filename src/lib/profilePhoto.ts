@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { errorMessage, supabase } from './supabase';
 
 /**
  * PROFILE PHOTOS
@@ -69,7 +69,7 @@ export async function uploadAvatarPhoto(userId: string, base64: string): Promise
 export async function removeAvatarPhoto(userId: string, currentPath: string | null): Promise<PhotoResult> {
   try {
     const { error } = await supabase.from('profiles').update({ avatar_path: null }).eq('id', userId);
-    if (error) return { ok: false, message: error.message };
+    if (error) return { ok: false, message: errorMessage(error) };
     if (currentPath) await supabase.storage.from(BUCKET).remove([currentPath]).catch(() => undefined);
     return { ok: true, path: '' };
   } catch (e) {

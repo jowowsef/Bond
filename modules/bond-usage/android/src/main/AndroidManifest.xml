@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Bond Screen Time (read-only). Android merges this into the app manifest.
+
+  PACKAGE_USAGE_STATS: lets Bond read how long apps were in use. It is NOT
+  granted by installing the app: the phone's owner must turn on
+  "Usage access" for Bond in Android Settings. Until then Bond reads nothing.
+
+  <queries>: Android 11+ hides other apps by default. We only need to see
+  apps that appear in the launcher (to show their names) and home-screen
+  apps (so time on the home screen is not counted as app use).
+
+  "Currently Using" foreground service (CurrentAppService): runs only after
+  the person turned on Currently Using sharing (with its own Cancel / Confirm
+  consent) and granted Usage access, while paired. Android shows a persistent
+  notification the whole time. Type "specialUse": none of Android's specific
+  service types fits "check which app is open to share it with a partner the
+  person chose", and "dataSync" would be cut off after a few hours on newer
+  Android versions. Google Play asks for a short explanation of specialUse
+  services when the app is published; the subtype below is that explanation.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+  <uses-permission
+      android:name="android.permission.PACKAGE_USAGE_STATS"
+      tools:ignore="ProtectedPermissions" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.HOME" />
+    </intent>
+  </queries>
+
+  <application>
+    <service
+        android:name="com.bond.usage.CurrentAppService"
+        android:exported="false"
+        android:foregroundServiceType="specialUse">
+      <property
+          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+          android:value="Consensual sharing of the foreground app name with the user's paired partner. Started only after the user opts in and grants Usage access; shows a persistent notification; checks Android usage events about every 20 seconds while the screen is on. The same service also shares battery level and charging state with the partner while the user has turned battery sharing on." />
+    </service>
+  </application>
+</manifest>

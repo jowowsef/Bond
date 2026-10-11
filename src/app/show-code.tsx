@@ -1,14 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { Redirect } from 'expo-router';
+import { Redirect } from '@/components/Redirect';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BackHeader } from '@/components/BackHeader';
+import { GearButton } from '@/components/GearButton';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { createCouple, displayCode } from '@/lib/pairing';
-import { colors, font, spacing } from '@/lib/theme';
+import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
 /**
@@ -22,6 +23,7 @@ import { useCouple } from '@/state/couple';
  * reuse the existing code instead of creating another couple.
  */
 export default function ShowCode() {
+  useThemeVersion();
   const { phase, couple, refresh } = useCouple();
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,8 +54,9 @@ export default function ShowCode() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, couple]);
 
-  // Partner joined → into the app.
-  if (phase === 'paired') return <Redirect href="/name-setup" />;
+  // Partner joined: the start screen begins this pairing's setup
+  // (Sharing setup -> Name -> Avatar color -> Home).
+  if (phase === 'paired') return <Redirect href="/" />;
 
   async function onCopy() {
     if (!couple) return;
@@ -64,7 +67,7 @@ export default function ShowCode() {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <BackHeader title="Your Pairing Code" />
+      <BackHeader title="Your Pairing Code" right={<GearButton />} />
       <View style={styles.body}>
         {error ? (
           <View style={styles.centerBlock}>
@@ -79,6 +82,11 @@ export default function ShowCode() {
           </View>
         ) : (
           <>
+            {/* Status first, compact: this code is live and Bond is waiting. */}
+            <View style={styles.waitPill} accessibilityLiveRegion="polite">
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.waitPillText}>Waiting for your partner to enter this code</Text>
+            </View>
             <Text style={styles.lead}>Share this code with your partner.</Text>
 
             <Card style={styles.codeCard}>
@@ -93,10 +101,6 @@ export default function ShowCode() {
               />
             </Card>
 
-            <View style={styles.waitRow}>
-              <ActivityIndicator color={colors.primary} />
-              <Text style={styles.waitText}>Waiting for your partner…</Text>
-            </View>
           </>
         )}
       </View>
@@ -104,7 +108,7 @@ export default function ShowCode() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.background },
   body: { flex: 1, padding: spacing.xl, paddingTop: spacing.md },
   centerBlock: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -112,7 +116,18 @@ const styles = StyleSheet.create({
   codeCard: { alignItems: 'center', paddingVertical: spacing.xl },
   codeLabel: { ...font.tiny, color: colors.muted, letterSpacing: 2 },
   code: { ...font.hero, fontSize: 38, color: colors.primary, marginTop: spacing.sm, letterSpacing: 2 },
-  waitRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: spacing.xl, gap: spacing.sm },
+  waitPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.xs + 2,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primarySoft,
+    marginBottom: spacing.lg,
+  },
+  waitPillText: { ...font.small, fontWeight: '600', color: colors.primary },
   waitText: { ...font.body, color: colors.subtext, marginTop: spacing.sm },
   errorText: { ...font.body, color: colors.danger, textAlign: 'center', marginTop: spacing.md },
-});
+}));

@@ -57,16 +57,64 @@ export function useActivityFeed(limit = 30): FeedState {
  */
 export function activityMessage(
   log: ActivityLog,
-  names: { myName?: string | null; partnerName?: string | null },
+  names: { myName?: string | null; partnerName?: string | null; myUserId?: string | null },
 ): string {
+  const known = (n?: string | null) => !!n && n.trim() !== '' && n.trim() !== 'Me';
   if (log.kind === 'partner_joined') {
     const a = names.myName?.trim();
     const b = names.partnerName?.trim();
-    const known = (n?: string) => !!n && n !== 'Me';
     if (known(a) && known(b)) return `${a} and ${b} are now connected.`;
     return 'You are now connected.';
   }
-  return log.message;
+  return perspectiveMessage(log, names.myUserId ?? null, known(names.partnerName) ? names.partnerName!.trim() : 'Your partner')
+    ?? log.message;
+}
+
+/**
+ * Rewrites a stored message from the viewer's point of view, deciding WHO
+ * acted from actor_id (never from names). The stored row is not changed.
+ * Returns null when the kind or actor is unknown, so the stored text is used.
+ */
+function perspectiveMessage(log: ActivityLog, myUserId: string | null, partner: string): string | null {
+  if (!myUserId || !log.actor_id) return null;
+  const mine = log.actor_id === myUserId;
+  const label = log.message.match(/"([^"]+)"/)?.[1]; // control name, when the message has one
+  const quoted = label ? `"${label}"` : 'the control';
+  // Partner's name at the start of a sentence; possessive form for "Sef's".
+  const P = partner;
+  const Ps = partner === 'Your partner' ? "your partner's" : partner.endsWith('s') ? `${partner}'` : `${partner}'s`;
+
+  switch (log.kind) {
+    case 'approval_requested': {
+      const unpair = /to unpair/.test(log.message);
+      if (unpair) return mine ? 'You asked to unpair.' : `${P} asked to unpair.`;
+      return mine ? 'You asked to turn off your location sharing.' : `${P} asked to turn off their location sharing.`;
+    }
+    case 'approval_approved':
+      return mine ? `You approved turning off ${Ps} location sharing.` : `${P} approved turning off your location sharing.`;
+    case 'approval_declined':
+      return mine ? `You declined ${Ps} request.` : `${P} declined your request.`;
+    case 'approval_cancelled':
+      return mine ? 'You withdrew your request.' : `${P} withdrew their request.`;
+    case 'location_on':
+      return mine ? 'You turned location sharing on.' : `${P} turned location sharing on.`;
+    case 'location_off':
+      return mine ? 'You turned location sharing off.' : `${P} turned location sharing off.`;
+    case 'partner_left':
+      return mine ? 'You unpaired. All controls were turned off.' : `${P} unpaired. All controls were turned off.`;
+    case 'control_enabled':
+      return mine ? `You turned on ${quoted} on your own phone.` : `${P} turned on ${quoted} on their own phone.`;
+    case 'request_created':
+      return mine ? `You asked to turn on ${quoted} on ${Ps} phone.` : `${P} asked to turn on ${quoted} on your phone.`;
+    case 'request_approved':
+      return mine ? `You accepted ${quoted} on your phone.` : `${P} accepted ${quoted} on their phone.`;
+    case 'request_declined':
+      return mine ? `You declined ${quoted}.` : `${P} declined ${quoted}.`;
+    case 'request_cancelled':
+      return mine ? `You withdrew the request for ${quoted}.` : `${P} withdrew the request for ${quoted}.`;
+    default:
+      return null;
+  }
 }
 
 /** Pick an icon + tone for an activity row from its `kind`. */
@@ -79,4 +127,18 @@ export function activityVisual(kind: string): { icon: string; tone: 'primary' | 
   if (kind === 'partner_joined') return { icon: 'heart-outline', tone: 'primary' };
   if (kind.includes('control')) return { icon: 'shield-outline', tone: 'success' };
   return { icon: 'ellipse-outline', tone: 'neutral' };
+}
+
+/** A short heading for an activity row, from its `kind` (display only). */
+export function activityTitle(kind: string): string {
+  if (kind === 'partner_joined') return 'Connected';
+  if (kind === 'unpaired' || kind === 'partner_left') return 'Unpaired';
+  if (kind === 'control_enabled') return 'Control turned on';
+  if (kind === 'control_revoked') return 'Control turned off';
+  if (kind.includes('approved')) return 'Request approved';
+  if (kind.includes('declined')) return 'Request declined';
+  if (kind.includes('cancelled')) return 'Request cancelled';
+  if (kind.includes('request')) return 'New request';
+  if (kind.startsWith('location')) return 'Location';
+  return 'Update';
 }

@@ -1,6 +1,6 @@
 import React from 'react';
-import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import { colors, radius, shadow, spacing } from '@/lib/theme';
+import { View, type StyleProp, type ViewStyle } from 'react-native';
+import { colors, radius, shadow, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 
 /** A white, rounded container with a hairline border and a very soft shadow. */
 export function Card({
@@ -12,10 +12,11 @@ export function Card({
   style?: StyleProp<ViewStyle>;
   tint?: string;
 }) {
+  useThemeVersion();
   return <View style={[styles.card, tint ? { backgroundColor: tint } : null, style]}>{children}</View>;
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   card: {
     backgroundColor: colors.card,
     borderRadius: radius.lg,
@@ -24,4 +25,4 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     ...shadow,
   },
-});
+}));

@@ -75,6 +75,8 @@ export type AppUsageDay = {
   app_name: string;
   foreground_ms: number;
   launches: number;
+  /** Last time that day the app was on screen (migration 0009; null before it or when unknown). */
+  last_used_at?: string | null;
   updated_at: string;
 };
 

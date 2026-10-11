@@ -1,8 +1,8 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { ProfileAvatar } from './ProfileAvatar';
 import type { LocationStatusKind, PersonLocation } from '@/hooks/useCoupleLocations';
-import { colors, font, spacing } from '@/lib/theme';
+import { colors, font, spacing, themed, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
 /**
@@ -10,13 +10,13 @@ import { useCouple } from '@/state/couple';
  * line (for example "Live · Diliman" or "Last updated 25 min ago"). The status
  * is shown once here, never repeated as a separate On/Off label.
  */
-const DOT: Record<LocationStatusKind, string> = {
+const DOT: Record<LocationStatusKind, string> = themed(() => ({
   live: colors.success,
   recent: colors.me,
   stale: colors.warning,
   waiting: colors.muted,
   off: colors.border,
-};
+}));
 
 export function LocationPersonRow({
   who,
@@ -32,13 +32,12 @@ export function LocationPersonRow({
   right?: React.ReactNode;
   onPress?: () => void;
 }) {
+  useThemeVersion();
   const { myProfile, partnerProfile } = useCouple();
   const profile = who === 'me' ? myProfile : partnerProfile;
   const name = who === 'me' ? 'You' : profile?.display_name ?? 'Partner';
 
-  const status = sub ?? (person.place && person.status !== 'off' && person.status !== 'waiting'
-    ? `${person.statusLabel} · ${person.place}`
-    : person.statusLabel);
+  const status = sub ?? statusLine(person);
 
   const body = (
     <View style={styles.row}>
@@ -66,7 +65,27 @@ export function LocationPersonRow({
   );
 }
 
-const styles = StyleSheet.create({
+/**
+ * "Moving · Diliman", "Live · Diliman", "Updated 7 min ago"...
+ * Movement replaces "Live" only while the position is live. An imprecise
+ * reading shows no area name (it could point to the wrong place).
+ */
+function statusLine(person: PersonLocation): string {
+  if (person.status === 'off' || person.status === 'waiting') return person.statusLabel;
+  let head = person.statusLabel;
+  if (person.status === 'live' && person.movement === 'moving') head = 'Moving';
+  else if (person.status === 'live' && person.movement === 'stationary') head = 'Stationary';
+  const parts = [head];
+  // No accuracy figures here. An imprecise reading just leaves the area name out.
+  if (!person.approximate && person.place) parts.push(person.place);
+  return parts.join(' · ');
+}
+
+export function formatMeters(m: number): string {
+  return m >= 1000 ? `${(m / 1000).toFixed(m >= 10000 ? 0 : 1)} km` : `${Math.round(m)} m`;
+}
+
+const styles = themedStyles(() => ({
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm + 2, gap: spacing.md },
   text: { flex: 1, minWidth: 0 },
   name: { ...font.h3, color: colors.text },
@@ -75,4 +94,4 @@ const styles = StyleSheet.create({
   status: { ...font.small, color: colors.subtext, flexShrink: 1 },
   statusLive: { color: colors.success, fontWeight: '600' },
   pressed: { opacity: 0.6 },
-});
+}));
