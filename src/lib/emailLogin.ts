@@ -21,8 +21,11 @@ import { supabase } from './supabase';
  * - Create account (signUp) is a separate, explicit action, with the same
  *   "no account on this phone" guard. The new account's name starts as "Me",
  *   so Bond still asks for a name during setup.
- * - A password-reset link is only applied if this phone is signed out or
- *   already signed in to that SAME account.
+ * - Password reset uses PKCE (see supabase.ts): the email link carries only
+ *   a one-time code, exchanged here with the secret this phone saved when it
+ *   asked for the email. The link is only used on a phone with no Bond
+ *   session, so an account that is signed in is never replaced. Links that
+ *   carry tokens (the older kind) are not used.
  */
 
 /** Where the reset email sends people: this app's registered "bond" scheme. */
@@ -59,8 +62,11 @@ function friendly(error: AuthError | { code?: string; message?: string } | null 
   }
   if (code === 'weak_password') return `Please choose a stronger password. ${e.message ?? ''}`.trim();
   if (code === 'same_password') return 'That is already your password. Choose a different one, or go back and sign in.';
-  if (code === 'otp_expired' || msg.includes('expired')) {
+  if (code === 'otp_expired' || code === 'flow_state_expired' || code === 'flow_state_not_found' || msg.includes('expired')) {
     return 'This reset link has expired or was already used. Request a new one.';
+  }
+  if (code === 'bad_code_verifier' || msg.includes('code verifier')) {
+    return 'Open the newest reset email on the same phone where you asked for it. If it still fails, request a new one.';
   }
   return e.message || 'Something went wrong. Please try again.';
 }
@@ -130,11 +136,15 @@ export async function requestPasswordReset(email: string): Promise<Result> {
 }
 
 export type RecoveryLink =
-  | { kind: 'tokens'; accessToken: string; refreshToken: string; userId: string | null }
+  /** PKCE: a one-time code, usable only with this phone's saved secret. */
+  | { kind: 'code'; code: string }
+  /** Supabase sent the person back with an error (expired, used, ...). */
   | { kind: 'error'; message: string }
+  /** A link that carries tokens (older, non-PKCE kind): not used. */
+  | { kind: 'legacy' }
   | { kind: 'none' };
 
-/** Read the tokens Supabase adds to the reset link (after "#", sometimes "?"). */
+/** Read what Supabase added to the reset link (query "?" and/or fragment "#"). */
 export function parseRecoveryUrl(url: string | null): RecoveryLink {
   if (!url) return { kind: 'none' };
   const params = new Map<string, string>();
@@ -142,7 +152,11 @@ export function parseRecoveryUrl(url: string | null): RecoveryLink {
     if (!part) continue;
     for (const pair of part.split('&')) {
       const [k, v = ''] = pair.split('=');
-      if (k) params.set(decodeURIComponent(k), decodeURIComponent(v.replace(/\+/g, ' ')));
+      try {
+        if (k) params.set(decodeURIComponent(k), decodeURIComponent(v.replace(/\+/g, ' ')));
+      } catch {
+        // malformed piece: ignore it
+      }
     }
   }
   if (params.get('error') || params.get('error_code')) {
@@ -151,44 +165,35 @@ export function parseRecoveryUrl(url: string | null): RecoveryLink {
       message: friendly({ code: params.get('error_code') ?? undefined, message: params.get('error_description') ?? undefined }),
     };
   }
-  const accessToken = params.get('access_token');
-  const refreshToken = params.get('refresh_token');
-  if (!accessToken || !refreshToken || params.get('type') !== 'recovery') return { kind: 'none' };
-  return { kind: 'tokens', accessToken, refreshToken, userId: tokenUserId(accessToken) };
-}
-
-/** The account id inside a Supabase access token (only used for the safety comparison). */
-function tokenUserId(token: string): string | null {
-  try {
-    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    const json = JSON.parse(globalThis.atob(payload.padEnd(payload.length + ((4 - (payload.length % 4)) % 4), '=')));
-    return typeof json.sub === 'string' ? json.sub : null;
-  } catch {
-    return null;
-  }
+  if (params.get('access_token') || params.get('refresh_token')) return { kind: 'legacy' };
+  const code = params.get('code');
+  if (code && /^[A-Za-z0-9-]{8,200}$/.test(code)) return { kind: 'code', code };
+  return { kind: 'none' };
 }
 
 /**
- * Apply the reset link and save the new password. Refuses if a DIFFERENT
- * account is signed in on this phone, so that account is never replaced.
+ * Step 1 of a reset: trade the link's one-time code for a session. Only on a
+ * phone with NO Bond session (an account that is signed in is never
+ * replaced), and only with the secret saved when this phone asked for the
+ * email (another phone or app can't use the code).
  */
-export async function completePasswordReset(link: RecoveryLink & { kind: 'tokens' }, newPassword: string): Promise<Result> {
+export async function startPasswordRecovery(link: RecoveryLink & { kind: 'code' }): Promise<Result> {
   const { data: current } = await supabase.auth.getSession();
-  const currentId = current.session?.user.id ?? null;
-  if (currentId && (!link.userId || currentId !== link.userId)) {
+  if (current.session) {
     return {
       ok: false,
-      message:
-        'A different Bond account is signed in on this phone, so this reset link was not used here. Open the link on the phone where you want to sign in.',
+      message: 'This phone is already signed in to a Bond account, so this reset link was not used here. Nothing was changed.',
     };
   }
+  const { data, error } = await supabase.auth.exchangeCodeForSession(link.code);
+  if (error || !data.session) return { ok: false, message: friendly(error) };
+  return { ok: true, value: undefined };
+}
 
-  const set = await supabase.auth.setSession({ access_token: link.accessToken, refresh_token: link.refreshToken });
-  if (set.error || !set.data.user) return { ok: false, message: friendly(set.error) };
-  if (link.userId && set.data.user.id !== link.userId) {
-    return { ok: false, message: 'This reset link did not match its account. Request a new one.' };
-  }
-
+/** Step 2: save the new password for the account the reset link opened. */
+export async function completePasswordReset(newPassword: string): Promise<Result> {
+  const { data: current } = await supabase.auth.getSession();
+  if (!current.session) return { ok: false, message: 'This reset link has expired or was already used. Request a new one.' };
   const { error } = await supabase.auth.updateUser({ password: newPassword, data: { bond_password_set: true } });
   if (error) return { ok: false, message: friendly(error) };
   return { ok: true, value: undefined };

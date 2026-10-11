@@ -8,15 +8,17 @@ import { BackHeader } from '@/components/BackHeader';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { MIN_PASSWORD_LENGTH } from '@/lib/accountProtection';
-import { completePasswordReset, parseRecoveryUrl, type RecoveryLink } from '@/lib/emailLogin';
+import { completePasswordReset, parseRecoveryUrl, startPasswordRecovery, type RecoveryLink } from '@/lib/emailLogin';
 import { colors, font, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
 /**
  * RESET PASSWORD: opened by the link in the reset email
- * (bond://reset-password#access_token=...&type=recovery). Lets the user pick
- * a new password, which also signs this phone in to that same account.
- * Refuses if a different account is signed in here (see lib/emailLogin.ts).
+ * (bond://reset-password?code=..., PKCE). The one-time code is exchanged once,
+ * on the phone that asked for the email (it holds the matching secret), then
+ * the user picks a new password. Refuses on a phone where an account is
+ * already signed in (see lib/emailLogin.ts). The link itself is never logged
+ * or stored.
  */
 export default function ResetPassword() {
   useThemeVersion();
@@ -29,24 +31,40 @@ export default function ResetPassword() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [ready, setReady] = useState(false); // code exchanged: ask for the new password
   const busyRef = useRef(false);
+  const exchangedRef = useRef<string | null>(null);
 
   useEffect(() => {
     // useURL starts as null and then reports the link that opened Bond.
     const parsed = parseRecoveryUrl(url);
-    if (parsed.kind !== 'none') setLink(parsed);
+    if (parsed.kind === 'legacy') {
+      setLink({ kind: 'error', message: 'This reset link is from an older version of Bond. Request a new one from Sign in > Forgot password.' });
+    } else if (parsed.kind === 'code') {
+      // A one-time code: exchange it once (the same link can be reported again).
+      if (exchangedRef.current !== parsed.code) {
+        exchangedRef.current = parsed.code;
+        setLink(parsed);
+        void startPasswordRecovery(parsed).then((r) => {
+          if (r.ok) setReady(true);
+          else setLink({ kind: 'error', message: r.message });
+        });
+      }
+    } else if (parsed.kind !== 'none') {
+      setLink(parsed);
+    }
     const t = setTimeout(() => setChecked(true), url ? 0 : 1500);
     return () => clearTimeout(t);
   }, [url]);
 
   async function onSave() {
-    if (busyRef.current || link.kind !== 'tokens') return;
+    if (busyRef.current || !ready) return;
     setError(null);
     if (password.length < MIN_PASSWORD_LENGTH) return setError(`Use at least ${MIN_PASSWORD_LENGTH} characters.`);
     busyRef.current = true;
     setBusy(true);
     try {
-      const r = await completePasswordReset(link, password);
+      const r = await completePasswordReset(password);
       if (!r.ok) {
         setError(r.message);
         return;
@@ -70,7 +88,7 @@ export default function ResetPassword() {
             <Text style={styles.body}>You&apos;re signed in to your Bond account on this phone.</Text>
             <Button label="Continue" onPress={() => router.replace('/')} />
           </Card>
-        ) : link.kind === 'tokens' ? (
+        ) : link.kind === 'code' && ready ? (
           <>
             <Text style={styles.body}>Choose a new password for your Bond account.</Text>
             <PasswordField
@@ -94,11 +112,13 @@ export default function ResetPassword() {
         ) : (
           <Card style={{ gap: spacing.md }}>
             <Text style={styles.body}>
-              {checked
+              {link.kind === 'code'
+                ? 'Opening your reset link…'
+                : checked
                 ? 'This page needs the link from a Bond password-reset email. Request a new one from Sign in > Forgot password.'
                 : 'Opening your reset link…'}
             </Text>
-            {checked ? (
+            {checked && link.kind !== 'code' ? (
               <Button label="Back to start" variant="secondary" small onPress={() => router.replace('/')} style={{ alignSelf: 'flex-start' }} />
             ) : null}
           </Card>

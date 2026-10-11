@@ -9,6 +9,11 @@ import { AppState } from 'react-native';
  * - The URL and key come from the ".env.local" file (see .env.example).
  * - Your login session is saved on the phone (AsyncStorage) so you stay
  *   logged in. Passwords are never stored — Supabase only keeps a token.
+ *   Android backups of the app's data are turned off (app.json allowBackup),
+ *   so the session never leaves the phone that way.
+ * - Email links (password reset) use PKCE: the link only carries a one-time
+ *   code, which works only together with a secret kept on the phone that
+ *   asked for it. Another app that catches the bond:// link can't use it.
  */
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
@@ -24,6 +29,7 @@ export const supabase = createClient(
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: false,
+      flowType: 'pkce',
     },
   },
 );

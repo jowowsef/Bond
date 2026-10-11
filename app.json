@@ -12,6 +12,7 @@
     },
     "android": {
       "package": "com.bond.couple",
+      "allowBackup": false,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#F7F9FC",
