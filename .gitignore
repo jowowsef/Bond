@@ -33,6 +33,18 @@ yarn-error.*
 # local env files
 .env*.local
 
+# secrets and credentials (never commit; keep them outside the repo)
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+credentials.json
+
+# logs and memory dumps
+*.log
+*.hprof
+
 # typescript
 *.tsbuildinfo
 
