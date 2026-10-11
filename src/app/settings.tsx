@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import * as Notifications from 'expo-notifications';
@@ -25,7 +24,7 @@ import { currentAppStatusText, useCurrentAppSharing, type CurrentAppStatus } fro
 import { useLocationSharingSwitch } from '@/hooks/useLocationSharingSwitch';
 import { askConfirm, confirmSharing, confirmStopSharing } from '@/lib/consent';
 import { possessive } from '@/lib/format';
-import { displayCode, updateDisplayName } from '@/lib/pairing';
+import { updateDisplayName } from '@/lib/pairing';
 import { removeAvatarPhoto, uploadAvatarPhoto } from '@/lib/profilePhoto';
 import { requestApproval } from '@/lib/requests';
 import { getUsageSupport, hasUsageAccess } from '@/lib/screenTime';
@@ -86,7 +85,6 @@ export default function Settings() {
   }
 
   const [name, setName] = useState(myProfile?.display_name ?? '');
-  const [copied, setCopied] = useState(false);
   const [privacy, setPrivacy] = useState<PrivacySettings | null>(null);
   const [savingName, setSavingName] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -196,13 +194,6 @@ export default function Settings() {
     // Changing colour never touches the photo.
     await supabase.from('profiles').update({ avatar_color: color }).eq('id', userId);
     await refresh();
-  }
-
-  async function onCopy() {
-    if (!couple) return;
-    await Clipboard.setStringAsync(displayCode(couple.invite_code));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
   }
 
   async function onToggleBattery(next: boolean) {
@@ -357,16 +348,7 @@ export default function Settings() {
         {/* Couple */}
         <SectionHeader title="Couple" />
         <Card>
-          <Row icon="heart-outline" label="Partner" value={partnerProfile?.display_name ?? '—'} />
-          <Pressable onPress={onCopy}>
-            <Row
-              icon="key-outline"
-              label="Pairing code"
-              value={displayCode(couple?.invite_code)}
-              right={<StatusBadge label={copied ? 'Copied' : 'Copy'} tone="primary" />}
-              last
-            />
-          </Pressable>
+          <Row icon="heart-outline" label="Partner" value={partnerProfile?.display_name ?? '—'} last />
         </Card>
 
         {/* Currently Using: its own section, easy to find */}

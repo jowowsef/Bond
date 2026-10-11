@@ -8,7 +8,7 @@ import { BackHeader } from '@/components/BackHeader';
 import { GearButton } from '@/components/GearButton';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
-import { createCouple, displayCode } from '@/lib/pairing';
+import { createCouple, displayCode, inviteExpired, inviteExpiresText, refreshInviteCode } from '@/lib/pairing';
 import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
@@ -21,6 +21,9 @@ import { useCouple } from '@/state/couple';
  *
  * If the user already generated a code earlier (phase === 'waiting'), we just
  * reuse the existing code instead of creating another couple.
+ *
+ * A code works for 24 hours. "New code" replaces it any time (the old one
+ * stops working); once it has expired, only the new-code action is offered.
  */
 export default function ShowCode() {
   useThemeVersion();
@@ -29,6 +32,27 @@ export default function ShowCode() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const startedRef = useRef(false);
+  const [renewing, setRenewing] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  // Keep "Expires in …" and the expired state current while the screen is open.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
+  async function newCode() {
+    setError(null);
+    setRenewing(true);
+    const result = await refreshInviteCode();
+    setRenewing(false);
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    setNow(Date.now());
+    await refresh();
+  }
 
   async function generate() {
     setError(null);
@@ -58,8 +82,11 @@ export default function ShowCode() {
   // (Sharing setup -> Name -> Avatar color -> Home).
   if (phase === 'paired') return <Redirect href="/" />;
 
+  const expired = inviteExpired(couple, now);
+  const expiresText = inviteExpiresText(couple, now);
+
   async function onCopy() {
-    if (!couple) return;
+    if (!couple || expired) return;
     await Clipboard.setStringAsync(displayCode(couple.invite_code));
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
@@ -73,7 +100,7 @@ export default function ShowCode() {
           <View style={styles.centerBlock}>
             <Ionicons name="alert-circle-outline" size={40} color={colors.danger} />
             <Text style={styles.errorText}>{error}</Text>
-            <Button label="Try again" onPress={generate} style={{ marginTop: spacing.lg }} />
+            <Button label="Try again" onPress={couple ? newCode : generate} style={{ marginTop: spacing.lg }} />
           </View>
         ) : !couple || generating ? (
           <View style={styles.centerBlock}>
@@ -83,24 +110,55 @@ export default function ShowCode() {
         ) : (
           <>
             {/* Status first, compact: this code is live and Bond is waiting. */}
-            <View style={styles.waitPill} accessibilityLiveRegion="polite">
-              <ActivityIndicator size="small" color={colors.primary} />
-              <Text style={styles.waitPillText}>Waiting for your partner to enter this code</Text>
-            </View>
-            <Text style={styles.lead}>Share this code with your partner.</Text>
+            {expired ? (
+              <View style={[styles.waitPill, styles.expiredPill]} accessibilityLiveRegion="polite">
+                <Ionicons name="time-outline" size={16} color={colors.warning} />
+                <Text style={[styles.waitPillText, styles.expiredPillText]}>This code has expired</Text>
+              </View>
+            ) : (
+              <View style={styles.waitPill} accessibilityLiveRegion="polite">
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={styles.waitPillText}>Waiting for your partner to enter this code</Text>
+              </View>
+            )}
+            <Text style={styles.lead}>
+              {expired ? 'Make a new code and share it with your partner.' : 'Share this code with your partner.'}
+            </Text>
 
             <Card style={styles.codeCard}>
               <Text style={styles.codeLabel}>PAIRING CODE</Text>
-              <Text style={styles.code}>{displayCode(couple.invite_code)}</Text>
-              <Button
-                label={copied ? 'Copied' : 'Copy Code'}
-                icon={copied ? 'checkmark' : 'copy-outline'}
-                variant="secondary"
-                onPress={onCopy}
-                style={{ marginTop: spacing.lg, alignSelf: 'stretch' }}
-              />
+              <Text style={[styles.code, expired && styles.codeExpired]}>{displayCode(couple.invite_code)}</Text>
+              {expiresText ? <Text style={styles.expires}>{expiresText}</Text> : null}
+              {expired ? (
+                <Button
+                  label="New Code"
+                  icon="refresh-outline"
+                  onPress={newCode}
+                  loading={renewing}
+                  style={{ marginTop: spacing.lg, alignSelf: 'stretch' }}
+                />
+              ) : (
+                <>
+                  <Button
+                    label={copied ? 'Copied' : 'Copy Code'}
+                    icon={copied ? 'checkmark' : 'copy-outline'}
+                    variant="secondary"
+                    onPress={onCopy}
+                    style={{ marginTop: spacing.lg, alignSelf: 'stretch' }}
+                  />
+                  <Button
+                    label="New Code"
+                    icon="refresh-outline"
+                    variant="ghost"
+                    small
+                    onPress={newCode}
+                    loading={renewing}
+                    style={{ marginTop: spacing.sm, alignSelf: 'center' }}
+                  />
+                </>
+              )}
             </Card>
-
+            <Text style={styles.note}>A code works for 24 hours. A new code replaces the old one.</Text>
           </>
         )}
       </View>
@@ -129,5 +187,10 @@ const styles = themedStyles(() => ({
   },
   waitPillText: { ...font.small, fontWeight: '600', color: colors.primary },
   waitText: { ...font.body, color: colors.subtext, marginTop: spacing.sm },
+  expiredPill: { backgroundColor: colors.warningSoft },
+  expiredPillText: { color: colors.warning },
+  codeExpired: { color: colors.muted, textDecorationLine: 'line-through' },
+  expires: { ...font.small, color: colors.subtext, marginTop: spacing.xs },
+  note: { ...font.small, color: colors.muted, textAlign: 'center', marginTop: spacing.lg },
   errorText: { ...font.body, color: colors.danger, textAlign: 'center', marginTop: spacing.md },
 }));

@@ -18,6 +18,8 @@ export type Couple = {
   invite_code: string;
   created_by: string;
   created_at: string;
+  /** When the code stops working (migration 0015; missing on older servers). */
+  invite_expires_at?: string | null;
 };
 
 export type CoupleMember = {
