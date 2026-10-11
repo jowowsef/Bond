@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- One inline script (allowed only by its hash). No external files, no network, no storage. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-VS+Z2TloQqix0G5pH3skCYSTqvUiuqoLhP1Ion16JXw='; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="light dark">
+<title>Email confirmation · Bond</title>
+<script>
+(function () {
+  // Supabase sends people here after checking the email link. On success it
+  // may add a one-time code; on failure it adds error / error_code /
+  // error_description, in the query (?) or the fragment (#). The page never
+  // shows, keeps or sends any of it, and removes it from the address bar first.
+  var search = '', hash = '';
+  try { search = String(location.search || ''); hash = String(location.hash || ''); } catch (e) {}
+  try {
+    if ((search || hash) && history.replaceState) history.replaceState(null, '', location.pathname);
+  } catch (e) {}
+
+  var params = {};
+  var parts = (search.charAt(0) === '?' ? search.slice(1) : search) + '&' + (hash.charAt(0) === '#' ? hash.slice(1) : hash);
+  parts.split('&').forEach(function (pair) {
+    if (!pair) return;
+    var i = pair.indexOf('=');
+    var key = i < 0 ? pair : pair.slice(0, i);
+    var value = i < 0 ? '' : pair.slice(i + 1);
+    try { key = decodeURIComponent(key.replace(/\+/g, ' ')); } catch (e) {}
+    try { value = decodeURIComponent(value.replace(/\+/g, ' ')); } catch (e) { value = ''; }
+    if (key === 'error' || key === 'error_code' || key === 'error_description') params[key] = value;
+  });
+  search = hash = parts = '';
+
+  var state = 'ok';
+  if ('error' in params || 'error_code' in params || 'error_description' in params) {
+    var code = String(params.error_code || '').toLowerCase();
+    var text = String(params.error_description || '').toLowerCase();
+    // Only a fixed set of messages is ever shown (never the text from the link).
+    state = (code === 'otp_expired' || code === 'flow_state_expired' || text.indexOf('expired') >= 0) ? 'expired' : 'invalid';
+  }
+  params = null;
+  document.documentElement.setAttribute('data-state', state);
+})();
+</script>
+<style>
+  :root {
+    --background: #F7F9FC;
+    --card: #FFFFFF;
+    --text: #1F2A44;
+    --subtext: #6B7590;
+    --muted: #9AA3B8;
+    --border: #E6EAF2;
+    --primary: #3D6FD1;
+    --success: #1F8A5B;
+    --success-soft: #E3F5EC;
+    --warning: #B7791F;
+    --warning-soft: #FCF3E3;
+    --me: #8DB4F0;
+    --partner: #F5A3B7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: #0F141C;
+      --card: #181F2A;
+      --text: #E9EDF5;
+      --subtext: #A7B0C4;
+      --muted: #7D879D;
+      --border: #283142;
+      --primary: #8DB4F0;
+      --success: #4CC38A;
+      --success-soft: #15301F;
+      --warning: #E5A84B;
+      --warning-soft: #33280F;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+    background: var(--background);
+    color: var(--text);
+    font-family: Inter, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+  }
+  main { width: 100%; max-width: 420px; text-align: center; }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 24px;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+  }
+  .brand svg { width: 34px; height: 31px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 32px 24px;
+    box-shadow: 0 4px 12px rgba(31, 42, 68, 0.05);
+  }
+  .badge {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .badge svg { width: 38px; height: 38px; }
+  .badge.ok { background: var(--success-soft); }
+  .badge.problem { background: var(--warning-soft); }
+  h1 { margin: 0 0 8px; font-size: 26px; font-weight: 800; letter-spacing: -0.6px; }
+  p { margin: 0; color: var(--subtext); font-size: 15px; }
+  .steps {
+    margin: 24px 0 0;
+    padding: 16px;
+    border-radius: 14px;
+    background: var(--background);
+    text-align: left;
+    list-style: none;
+    counter-reset: step;
+  }
+  .steps li { counter-increment: step; display: flex; gap: 12px; align-items: flex-start; color: var(--text); font-size: 15px; }
+  .steps li + li { margin-top: 10px; }
+  .steps li::before {
+    content: counter(step);
+    flex: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: var(--card);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 24px;
+    text-align: center;
+  }
+  .note { margin-top: 20px; font-size: 13px; color: var(--muted); }
+  footer { margin-top: 24px; font-size: 13px; color: var(--muted); }
+  a { color: var(--primary); text-decoration: none; font-weight: 600; }
+  a:hover, a:focus-visible { text-decoration: underline; }
+
+  /* One view at a time. Without the script (or before it runs) the success view shows. */
+  .view { display: none; }
+  html:not([data-state]) .view-ok,
+  html[data-state="ok"] .view-ok,
+  html[data-state="expired"] .view-expired,
+  html[data-state="invalid"] .view-invalid { display: block; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand" aria-label="Bond">
+    <svg viewBox="0 0 100 90" aria-hidden="true" focusable="false">
+      <path fill="var(--me)" d="M47 15C41 5 32 0 23 0 10 0 0 11 0 26c0 25 22 42 47 63z"/>
+      <path fill="var(--partner)" d="M53 15C59 5 68 0 77 0c13 0 23 11 23 26 0 25-22 42-47 63z"/>
+    </svg>
+    <span>Bond</span>
+  </div>
+
+  <div class="card view view-ok" role="status">
+    <div class="badge ok" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12.5l4.5 4.5L19 7.5"/>
+      </svg>
+    </div>
+    <h1>Email confirmed!</h1>
+    <p>You can now return to Bond and sign in.</p>
+    <ol class="steps">
+      <li><span>Open the Bond app on your phone.</span></li>
+      <li><span>Tap <strong>Continue with Email</strong>, then <strong>Sign in</strong> with your email and password.</span></li>
+    </ol>
+    <p class="note">You can close this page.</p>
+  </div>
+
+  <div class="card view view-expired" role="alert">
+    <div class="badge problem" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>
+      </svg>
+    </div>
+    <h1>This link has expired</h1>
+    <p>Confirmation links work once and only for a limited time. Your email was not confirmed with this link.</p>
+    <ol class="steps">
+      <li><span>Open the Bond app and try to <strong>Sign in</strong>. If it works, your email was already confirmed.</span></li>
+      <li><span>If Bond says your email isn't confirmed, create your account again to get a new email, and tap its link soon.</span></li>
+    </ol>
+  </div>
+
+  <div class="card view view-invalid" role="alert">
+    <div class="badge problem" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 8v5"/><path d="M12 16.5h.01"/><circle cx="12" cy="12" r="8.5"/>
+      </svg>
+    </div>
+    <h1>We couldn't confirm your email</h1>
+    <p>This confirmation link didn't work. It may be incomplete, already used, or no longer valid.</p>
+    <ol class="steps">
+      <li><span>Open the Bond app and try to <strong>Sign in</strong>. If it works, your email is already confirmed.</span></li>
+      <li><span>If not, open the newest email from Bond, or create your account again to get a new one.</span></li>
+    </ol>
+  </div>
+
+  <footer><a href="privacy-policy.html">Privacy Policy</a></footer>
+</main>
+</body>
+</html>

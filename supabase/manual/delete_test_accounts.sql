@@ -91,10 +91,19 @@ end $$;
 
 -- No push can reach the phones while deleting.
 delete from public.push_tokens where user_id in (select id from bond_targets);
--- Their couples' calendars first (the calendar guard keeps "created by" on updates).
+-- Their couples' own rows first, before the accounts. These rows name the
+-- accounts with ON DELETE SET NULL; if the accounts went first, PostgreSQL
+-- could update them after their couple was already gone and stop with
+-- error 23503 (activity_logs_couple_id_fkey). They would be deleted with the
+-- couple anyway; this only fixes the order. (The calendar guard also keeps
+-- "created by" on updates.) Order: rows that point at other rows first.
+delete from public.active_controls   where couple_id in (select id from bond_target_couples);
+delete from public.control_requests  where couple_id in (select id from bond_target_couples);
+delete from public.approval_requests where couple_id in (select id from bond_target_couples);
+delete from public.activity_logs     where couple_id in (select id from bond_target_couples);
 do $$
 begin
-  if to_regclass('public.calendar_events') is not null then
+  if to_regclass('public.calendar_events') is not null then   -- 0012; its exceptions/reminders follow by cascade
     execute 'delete from public.calendar_events where couple_id in (select id from bond_target_couples)';
   end if;
 end $$;
