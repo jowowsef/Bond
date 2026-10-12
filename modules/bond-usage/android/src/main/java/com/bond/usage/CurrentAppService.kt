@@ -40,7 +40,13 @@ import android.os.PowerManager
  * can't happen (offline), the latest value is sent again with a growing pause.
  * Every step is written to BackgroundDiagnostics (local only).
  *
- * If Android kills Bond, this stops; it starts again when Bond is opened.
+ * If the phone kills Bond's process while this runs (some phones, for example
+ * Tecno/Infinix, do that even with battery use unrestricted), Android may
+ * restart it (START_STICKY) with the parts that were on (saved below); the
+ * JavaScript task is then restored by expo-task-manager and checks every rule
+ * again. If the phone doesn't allow that, it starts again when Bond is opened.
+ * Stopping it on purpose (onDestroy) forgets the saved parts, so it never comes
+ * back after sharing was turned off.
  */
 class CurrentAppService : Service() {
 
@@ -53,6 +59,8 @@ class CurrentAppService : Service() {
   private var watchBattery = false
   private var watchScreenTime = false
   private var screenTimeFailures = 0
+  /** When Android last restarted this service (0 = started normally). */
+  private var restartedAt = 0L
 
   // Currently Using state
   private var lastKey: String? = null
@@ -113,15 +121,23 @@ class CurrentAppService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val restarted = intent == null
+    if (restarted && !prefs.getBoolean(KEY_WANTED, false)) {
+      // Restarted by Android, but nothing was on any more.
+      stopSelf()
+      return START_NOT_STICKY
+    }
     val title = intent?.getStringExtra(EXTRA_TITLE) ?: DEFAULT_TITLE
     val body = intent?.getStringExtra(EXTRA_BODY) ?: DEFAULT_BODY
-    intervalMs = (intent?.getLongExtra(EXTRA_INTERVAL, DEFAULT_INTERVAL_MS) ?: DEFAULT_INTERVAL_MS)
+    intervalMs = (intent?.getLongExtra(EXTRA_INTERVAL, DEFAULT_INTERVAL_MS) ?: prefs.getLong(KEY_INTERVAL, DEFAULT_INTERVAL_MS))
       .coerceIn(MIN_INTERVAL_MS, MAX_INTERVAL_MS)
-    heartbeatMs = (intent?.getLongExtra(EXTRA_HEARTBEAT, DEFAULT_HEARTBEAT_MS) ?: DEFAULT_HEARTBEAT_MS)
+    heartbeatMs = (intent?.getLongExtra(EXTRA_HEARTBEAT, DEFAULT_HEARTBEAT_MS) ?: prefs.getLong(KEY_HEARTBEAT, DEFAULT_HEARTBEAT_MS))
       .coerceIn(MIN_HEARTBEAT_MS, MAX_HEARTBEAT_MS)
-    val apps = intent?.getBooleanExtra(EXTRA_WATCH_APPS, true) ?: true
-    val battery = intent?.getBooleanExtra(EXTRA_WATCH_BATTERY, false) ?: false
-    val screenTime = intent?.getBooleanExtra(EXTRA_WATCH_SCREEN_TIME, false) ?: false
+    val apps = intent?.getBooleanExtra(EXTRA_WATCH_APPS, true) ?: prefs.getBoolean(KEY_APPS, false)
+    val battery = intent?.getBooleanExtra(EXTRA_WATCH_BATTERY, false) ?: prefs.getBoolean(KEY_BATTERY, false)
+    val screenTime = intent?.getBooleanExtra(EXTRA_WATCH_SCREEN_TIME, false) ?: prefs.getBoolean(KEY_SCREEN_TIME, false)
+    prefs.edit().putLong(KEY_INTERVAL, intervalMs).putLong(KEY_HEARTBEAT, heartbeatMs).apply()
 
     // Must become a foreground service right away (Android rule).
     try {
@@ -141,14 +157,43 @@ class CurrentAppService : Service() {
       thread = HandlerThread("bond-background").also { it.start() }
       handler = Handler(thread!!.looper)
       detector = ForegroundAppDetector(applicationContext)
-      BackgroundDiagnostics.log(applicationContext, "service: started")
+      BackgroundDiagnostics.log(
+        applicationContext,
+        if (restarted) "service: restarted by Android (the phone had closed Bond)" else "service: started",
+      )
     }
     instance = this
     running = true
+    if (restarted) {
+      restartedAt = System.currentTimeMillis()
+      restoreTask()
+    }
     handler?.post { applyModes(apps, battery, screenTime) }
-    // Not restarted by Android after it kills Bond: it starts again when Bond
-    // is opened, and the JavaScript side checks every rule again first.
-    return START_NOT_STICKY
+    // Restarted by Android if the phone kills Bond's process (see above); the
+    // JavaScript task checks every rule again before anything is uploaded.
+    return START_STICKY
+  }
+
+  /**
+   * After a restart in a new process, ask expo-task-manager to restore Bond's
+   * registered task (it does that when its TaskService is created), so reports
+   * reach JavaScript again. Nothing registered (sharing turned off) = the first
+   * report stops the service. Reflection: bond-usage doesn't link to
+   * expo-task-manager's classes directly.
+   */
+  private fun restoreTask() {
+    if (CurrentAppTaskConsumer.active != null) return
+    mainHandler.post {
+      try {
+        Class.forName("expo.modules.taskManager.TaskService").getConstructor(Context::class.java).newInstance(applicationContext)
+        BackgroundDiagnostics.log(
+          applicationContext,
+          if (CurrentAppTaskConsumer.active != null) "service: task restored" else "service: no task to restore",
+        )
+      } catch (e: Throwable) {
+        BackgroundDiagnostics.log(applicationContext, "service: task not restored (${e.javaClass.simpleName})")
+      }
+    }
   }
 
   override fun onDestroy() {
@@ -166,6 +211,9 @@ class CurrentAppService : Service() {
     watchApps = false
     watchBattery = false
     watchScreenTime = false
+    // Stopped on purpose (by Bond, or by the phone through Android): don't
+    // come back on a restart. A killed process never gets here.
+    getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_WANTED, false).apply()
     BackgroundDiagnostics.log(applicationContext, "service: stopped")
     super.onDestroy()
   }
@@ -175,6 +223,12 @@ class CurrentAppService : Service() {
     if (apps != watchApps || battery != watchBattery || screenTime != watchScreenTime) {
       BackgroundDiagnostics.log(applicationContext, "service: modes apps=$apps battery=$battery screenTime=$screenTime")
     }
+    getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+      .putBoolean(KEY_WANTED, apps || battery || screenTime)
+      .putBoolean(KEY_APPS, apps)
+      .putBoolean(KEY_BATTERY, battery)
+      .putBoolean(KEY_SCREEN_TIME, screenTime)
+      .apply()
     if (!apps && !battery && !screenTime) {
       stopSelf()
       return
@@ -370,6 +424,12 @@ class CurrentAppService : Service() {
   private fun report(data: Bundle, onDone: (retry: Boolean) -> Unit) {
     val consumer = CurrentAppTaskConsumer.active
     val what = describe(data)
+    if (consumer == null && restartedAt > 0 && System.currentTimeMillis() - restartedAt < RESTORE_WAIT_MS) {
+      // Just restarted by Android: the task is still being restored. Try again shortly.
+      BackgroundDiagnostics.log(applicationContext, "report: waiting for the task to be restored ($what)")
+      onDone(true)
+      return
+    }
     if (consumer == null) {
       // The task was unregistered (sharing stopped / signed out): nothing to report to.
       BackgroundDiagnostics.log(applicationContext, "report: no task registered; stopping ($what)")
@@ -459,6 +519,13 @@ class CurrentAppService : Service() {
     const val EXTRA_WATCH_APPS = "watchApps"
     const val EXTRA_WATCH_BATTERY = "watchBattery"
     const val EXTRA_WATCH_SCREEN_TIME = "watchScreenTime"
+    private const val PREFS = "bond_background_service"
+    private const val KEY_WANTED = "wanted"
+    private const val KEY_APPS = "apps"
+    private const val KEY_BATTERY = "battery"
+    private const val KEY_SCREEN_TIME = "screenTime"
+    private const val KEY_INTERVAL = "intervalMs"
+    private const val KEY_HEARTBEAT = "heartbeatMs"
     private const val CHANNEL_ID = "bond-current-app-quiet"
     private const val OLD_CHANNEL_ID = "bond-current-app"
     private const val NOTIFICATION_ID = 42017
@@ -482,6 +549,8 @@ class CurrentAppService : Service() {
     private const val SCREEN_TIME_MS = 15 * 60_000L
     private const val SCREEN_TIME_FIRST_MS = 5_000L
     private const val SCREEN_TIME_RETRY_BASE_MS = 60_000L
+    /** After a restart by Android, how long reports wait for the task to be restored. */
+    private const val RESTORE_WAIT_MS = 60_000L
 
     @Volatile
     var running = false

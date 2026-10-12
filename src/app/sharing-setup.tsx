@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BondLogo } from '@/components/BondLogo';
 import { Button } from '@/components/Button';
@@ -70,6 +70,14 @@ const EMPTY: Snapshot = {
 };
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
+
+/**
+ * Tecno, Infinix and itel (HiOS / XOS) close apps in the background with their
+ * own settings, even when Android's battery use is "Unrestricted". Bond can't
+ * read or change those, so it only explains where they are.
+ */
+const PHONE_BRAND = String(((Platform.constants ?? {}) as { Brand?: string; Manufacturer?: string }).Brand ?? '').toLowerCase();
+const KEEPS_CLOSING_APPS = ['tecno', 'infinix', 'itel'].includes(PHONE_BRAND);
 type Tone = 'blue' | 'pink';
 type FeatureStep = Exclude<SharingStep, 'overview'>;
 const FEATURE_STEPS = SHARING_STEPS.filter((s): s is FeatureStep => s !== 'overview');
@@ -344,6 +352,15 @@ export default function SharingSetup() {
       hint: 'Bond can’t check this. In App info › Mobile data, make sure background data is allowed.',
       link: { label: 'Open App info', onPress: () => void openAppSettings() },
     });
+    if (KEEPS_CLOSING_APPS) {
+      checks.push({
+        label: 'Tecno, Infinix and itel phones',
+        ok: null,
+        hint:
+          'These phones close apps in the background on their own. In Phone Master › App launch, set Bond to manage ' +
+          'manually and turn on Auto-launch, Secondary launch and Run in background. Then lock Bond in Recent apps.',
+      });
+    }
     checks.push({ label: `Share my battery with ${partnerName}`, ok: snap.shareBattery });
     if (opt === true) {
       action = {

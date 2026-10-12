@@ -52,7 +52,10 @@ export default function TabsLayout() {
   useScreenTimeSync(activeUser);
   // ...and while Bond is closed, through its foreground service (sharing on +
   // Usage access granted; Android shows a notification). No separate switch.
-  useCurrentAppService({ userId: activeUser, partnerName });
+  // While Bond is still loading or offline the state isn't known: leave the
+  // service running (undefined) instead of stopping it.
+  const serviceUser = phase === 'loading' || phase === 'offline' || pairingSetup === 'unknown' ? undefined : activeUser;
+  useCurrentAppService({ userId: serviceUser, partnerName });
   // Ask Android to run the battery and screen time jobs in the background
   // (each job still checks pairing, setup and its own sharing setting).
   useEffect(() => {

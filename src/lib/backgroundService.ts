@@ -3,6 +3,7 @@ import {
   currentAppServiceAvailable,
   serviceModes,
   startCurrentAppService,
+  logDiagnostic,
   stopCurrentAppService,
   updateServiceModes,
   type ServiceModes,
@@ -49,6 +50,7 @@ export function reconcileBackgroundService(userId: string | null, partnerName: s
 async function run(userId: string | null, partnerName: string): Promise<ServiceModes | null> {
   if (!currentAppServiceAvailable()) return null; // older build: the earlier checks still work
   if (!userId) {
+    if (serviceModes().running) logDiagnostic('service stopped by Bond: signed out, unpaired or setup not finished');
     await stopCurrentAppService();
     return { apps: false, battery: false, screenTime: false };
   }
@@ -65,7 +67,10 @@ async function run(userId: string | null, partnerName: string): Promise<ServiceM
   });
   const now = serviceModes();
   if (!want.apps && !want.battery && !want.screenTime) {
-    if (now.running) await stopCurrentAppService();
+    if (now.running) {
+      logDiagnostic('service stopped by Bond: all background sharing is off');
+      await stopCurrentAppService();
+    }
     return want;
   }
   if (now.running && now.apps === want.apps && now.battery === want.battery && now.screenTime === want.screenTime) return want;

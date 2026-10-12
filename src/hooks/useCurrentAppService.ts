@@ -8,18 +8,21 @@ import { supabase, uniqueTopic } from '@/lib/supabase';
  * lib/backgroundService.ts): app checks while Currently Using is on with
  * Usage access, battery while battery sharing is on, stopped when neither.
  * Mounted once, in the main tabs, with a user id ONLY while paired with setup
- * finished (null otherwise, which stops it).
+ * finished (null otherwise, which stops it). undefined = not known yet (Bond is
+ * still loading, or offline): the service is left as it is. Stopping it then
+ * would stop background updates whenever Bond opens on a slow connection.
  *
  * Re-checked when Bond starts, when it comes back to the front (for example
  * after Usage access was changed in Android Settings), and when either
  * setting changes (here or on another phone). Starting needs Bond to be open
  * (an Android rule), so it is never attempted from the background.
  */
-export function useCurrentAppService({ userId, partnerName }: { userId: string | null; partnerName: string }): void {
+export function useCurrentAppService({ userId, partnerName }: { userId: string | null | undefined; partnerName: string }): void {
   const nameRef = useRef(partnerName);
   nameRef.current = partnerName;
 
   useEffect(() => {
+    if (userId === undefined) return; // not known yet: change nothing
     const run = () => {
       if (userId && AppState.currentState !== 'active') return;
       void reconcileBackgroundService(userId, nameRef.current).catch(() => undefined);
