@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BondLogo } from '@/components/BondLogo';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Redirect } from '@/components/Redirect';
@@ -17,7 +18,6 @@ import {
   getLocationState,
   getNotificationState,
   openAppSettings,
-  requestLocationForeground,
   requestNotifications,
   type PermissionState,
 } from '@/lib/setupPermissions';
@@ -27,16 +27,21 @@ import { requestUsageAccess } from '@/lib/usageAccessFlow';
 import { useCouple } from '@/state/couple';
 
 /**
- * SHARING SETUP after a new pairing, ONE screen at a time:
- *   Notifications -> Location -> Battery & background -> Screen Time ->
- *   Currently Using, then the start screen continues with Name -> Avatar color.
+ * SHARING SETUP after a new pairing:
+ *   Overview (what Bond can use, with a check for what is already done) ->
+ *   Notifications -> Location -> Background -> Screen Time -> Currently Using,
+ *   then the start screen continues with Name -> Avatar color.
  *
- * Two separate things on every screen, never mixed:
+ * Each step screen does ONE thing at a time: its main button is always the
+ * next thing still missing (an Android permission, or turning sharing on), and
+ * becomes "Next" when the step is complete. "Not now" moves on and leaves it
+ * off; everything can be changed later in Settings.
+ *
+ * Two separate things, never mixed:
  *  - Android permissions (Bond explains first; Android's own dialog or
  *    Settings page decides). Granting one never turns on any sharing.
  *  - Bond sharing with the partner: everything starts OFF for a new pairing
  *    and is only turned on by the person, after Bond's confirmation.
- * "Not now" moves on and leaves it off; it can be set later in Settings.
  * The current screen is saved for this pairing, so leaving Bond, a trip to
  * Android Settings or a restart resumes here; coming back re-reads what
  * Android actually allows.
@@ -62,6 +67,20 @@ const EMPTY: Snapshot = {
   shareLocation: false,
   shareBattery: false,
   shareScreenTime: false,
+};
+
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
+type Tone = 'blue' | 'pink';
+type FeatureStep = Exclude<SharingStep, 'overview'>;
+const FEATURE_STEPS = SHARING_STEPS.filter((s): s is FeatureStep => s !== 'overview');
+
+/** How each step looks in the overview list. */
+const OVERVIEW: Record<FeatureStep, { icon: IconName; title: string; desc: string; tone: Tone }> = {
+  notifications: { icon: 'notifications-outline', title: 'Notifications', desc: 'Alerts and reminders', tone: 'blue' },
+  location: { icon: 'location-outline', title: 'Location', desc: 'See each other on the map', tone: 'pink' },
+  battery: { icon: 'sync-outline', title: 'Background activity', desc: 'Keep everything up to date', tone: 'blue' },
+  screen_time: { icon: 'time-outline', title: 'Screen Time', desc: 'Daily screen time and top apps', tone: 'pink' },
+  current_app: { icon: 'phone-portrait-outline', title: 'Currently Using', desc: 'The app open on your phone', tone: 'blue' },
 };
 
 export default function SharingSetup() {
@@ -133,18 +152,30 @@ export default function SharingSetup() {
     userId,
     partnerName,
     onChanged: () => Promise.all([refresh(), read()]),
-    offerBackground: false, // this screen explains "Allow all the time" itself
+    offerBackground: false, // the Location step explains "Allow all the time" itself
   });
   const currentApp = useCurrentAppSharing(userId, partnerName);
 
   // Only during a new pairing's sharing step; otherwise the start screen decides.
   if (phase !== 'loading' && pairingSetup !== 'unknown' && pairingSetup !== 'sharing') return <Redirect href="/" />;
 
-  const index = step ? SHARING_STEPS.indexOf(step) : 0;
+  const usageSupported = getUsageSupport() === 'ready';
+  const fg = snap.locationFg === 'granted';
+  const bg = snap.locationBg === 'granted';
+  const currentAppOn = currentApp.switchValue;
 
-  async function go(to: number) {
+  /** Is everything for this step done (shown as a check in the overview)? */
+  const done: Record<FeatureStep, boolean> = {
+    notifications: snap.notifications === 'granted',
+    location: snap.shareLocation && fg && bg,
+    battery: snap.shareBattery && snap.batteryOptimized === false,
+    screen_time: snap.usageAccess && snap.shareScreenTime,
+    current_app: currentAppOn,
+  };
+
+  async function go(to: SharingStep | 'finish') {
     if (!userId || !coupleId) return;
-    if (to >= SHARING_STEPS.length) {
+    if (to === 'finish') {
       if (finishing) return;
       setFinishing(true);
       const ok = await advancePairingSetup('sharing'); // then Name -> Avatar color
@@ -156,10 +187,13 @@ export default function SharingSetup() {
       }
       return;
     }
-    const next = SHARING_STEPS[Math.max(0, to)];
-    setStep(next);
-    await saveSharingStep(userId, coupleId, next);
+    setStep(to);
+    await saveSharingStep(userId, coupleId, to);
   }
+
+  const index = step ? SHARING_STEPS.indexOf(step) : 0;
+  const next = () => void go(index + 1 < SHARING_STEPS.length ? SHARING_STEPS[index + 1] : 'finish');
+  const back = () => void go(SHARING_STEPS[Math.max(0, index - 1)]);
 
   async function run(key: string, work: () => Promise<unknown>) {
     if (busy) return;
@@ -190,290 +224,362 @@ export default function SharingSetup() {
     });
   }
 
-  // ---------------- the screens ----------------
-  let icon: React.ComponentProps<typeof Ionicons>['name'] = 'notifications-outline';
+  // ---------------- Overview ----------------
+  if (step === 'overview') {
+    const firstOpen = FEATURE_STEPS.find((s) => !done[s]);
+    return (
+      <SafeAreaView style={styles.screen}>
+        <ScrollView contentContainerStyle={styles.overview} showsVerticalScrollIndicator={false}>
+          <BondLogo size={34} showWordmark={false} />
+          <Text style={styles.overviewTitle}>Let&apos;s get you two connected</Text>
+          <Text style={styles.overviewSub}>Bond needs a few permissions to work. You&apos;re always in control.</Text>
+          <ResetWarning failed={resetFailed} onRetry={() => void prepare()} />
+          <View style={styles.list}>
+            {FEATURE_STEPS.map((s) => {
+              const o = OVERVIEW[s];
+              return (
+                <Pressable
+                  key={s}
+                  onPress={() => void go(s)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${o.title}: ${done[s] ? 'done' : 'not set up'}`}
+                  style={({ pressed }) => [styles.listRow, pressed && { opacity: 0.85 }]}
+                >
+                  <View style={[styles.listIcon, o.tone === 'pink' ? styles.pinkSoft : styles.blueSoft]}>
+                    <Ionicons name={o.icon} size={19} color={o.tone === 'pink' ? colors.pink : colors.blue} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.listTitle}>{o.title}</Text>
+                    <Text style={styles.listDesc}>{o.desc}</Text>
+                  </View>
+                  {done[s] ? (
+                    <Ionicons name="checkmark-circle" size={26} color={colors.primary} />
+                  ) : (
+                    <View style={styles.allowPill}>
+                      <Text style={styles.allowText}>Allow</Text>
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+        </ScrollView>
+        <View style={styles.bottom}>
+          <PrivacyNote text="Shared only between you and your partner" />
+          <Button label="Continue" onPress={() => void go(firstOpen ?? 'finish')} loading={finishing} disabled={!resetReady && !firstOpen} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ---------------- One step at a time ----------------
+  let icon: IconName = 'notifications-outline';
+  let tone: Tone = 'blue';
   let title = '';
   let body = '';
-  const rows: StatusRow[] = [];
-  const actions: React.ReactNode[] = [];
+  let tip: string | null = null;
+  let note = `Only ${partnerName} can see this. Turn it off anytime.`;
+  /** The next missing thing for this step (null = the step is complete). */
+  let action: { label: string; onPress: () => void; loading?: boolean; disabled?: boolean } | null = null;
+  const checks: { label: string; ok: boolean | null; hint?: string; link?: { label: string; onPress: () => void } }[] = [];
 
   if (step === 'notifications') {
     icon = 'notifications-outline';
-    title = 'Notifications';
+    title = 'Never miss what matters';
     body = `Get a notification when ${partnerName}'s battery is low, for shared calendar reminders, or if you are unpaired. Nothing else.`;
-    const n = snap.notifications;
-    rows.push({ label: 'Notifications', ok: n === 'granted', text: n === 'granted' ? 'On' : n === 'denied' ? 'Off in Android settings' : 'Not turned on yet' });
-    if (n !== 'granted') {
-      actions.push(
-        <Button
-          key="n"
-          label={n === 'denied' ? 'Open Notification Settings' : 'Enable Notifications'}
-          loading={busy === 'notif'}
-          onPress={() => void run('notif', requestNotifications)}
-        />,
-      );
+    note = 'You can turn notifications off anytime.';
+    if (snap.notifications !== 'granted') {
+      action = {
+        label: snap.notifications === 'denied' ? 'Open notification settings' : 'Turn on notifications',
+        loading: busy === 'notif',
+        onPress: () => void run('notif', requestNotifications),
+      };
     }
   } else if (step === 'location') {
-    icon = 'location-outline';
-    title = 'Location';
-    const fg = snap.locationFg === 'granted';
-    const bg = snap.locationBg === 'granted';
-    if (!fg) {
-      body =
-        `Bond can show ${partnerName} where you are on the map. First, Android asks whether Bond may use your location ` +
-        'while you use the app. This only allows it; sharing stays off until you turn it on below.';
+    tone = 'pink';
+    icon = 'location';
+    if (!snap.shareLocation || !fg) {
+      title = 'Share where you are';
+      body = `See each other on the map, so you both know the other got there safe. Android first asks to allow location while you use Bond.`;
+      tip = 'Tip: choose "While using the app" now. Next, Bond helps you turn on "Allow all the time".';
+      action = {
+        label: 'Share my location',
+        disabled: !resetReady,
+        loading: locationSwitch.busy,
+        onPress: () => locationSwitch.request(true),
+      };
     } else if (!bg) {
+      title = 'Keep it up to date';
       body =
-        'To keep your location up to date while Bond is closed or your screen is locked, Android needs "Allow all the time". ' +
-        'Android does not offer it in a pop-up: tap Open Location Settings, then choose "Allow all the time", ' +
-        'and come back. While it runs in the background Android shows a notification. You can skip this; Bond then shares only while it is open.';
+        `Right now ${partnerName} only sees your location while Bond is open. With "Allow all the time", it stays up to date ` +
+        'even when Bond is closed or your screen is locked. Android shows a small notification while it runs.';
+      tip = 'Tip: on the next screen, choose "Allow all the time", then come back.';
+      action = {
+        label: 'Allow all the time',
+        loading: busy === 'bg',
+        onPress: () =>
+          void run('bg', async () => {
+            // Android 11+: opens Bond's own location permission page (the
+            // closest Android allows). If it won't ask again: App info.
+            if (snap.locationBg === 'ask') await requestBackgroundPermission();
+            else await openAppSettings();
+          }),
+      };
     } else {
-      body = `Android allows location all the time. Turn on sharing if you want ${partnerName} to see where you are.`;
-    }
-    rows.push({ label: 'Location while using Bond', ok: fg, text: fg ? 'Allowed' : snap.locationFg === 'denied' ? 'Denied in Android settings' : 'Not allowed yet' });
-    rows.push({ label: 'Allow all the time', ok: fg ? bg : null, text: bg ? 'Allowed' : fg ? 'Not allowed: only while Bond is open' : 'After the first step' });
-    rows.push({ label: `Shared with ${partnerName}`, ok: snap.shareLocation, text: snap.shareLocation ? 'On' : 'Off' });
-    if (!fg) {
-      actions.push(
-        <Button
-          key="fg"
-          label={snap.locationFg === 'denied' ? 'Open App Settings' : 'Enable Location'}
-          loading={busy === 'fg'}
-          onPress={() => void run('fg', requestLocationForeground)}
-        />,
-      );
-    } else if (!bg) {
-      actions.push(
-        <Button
-          key="bg"
-          label="Open Location Settings"
-          icon="settings-outline"
-          loading={busy === 'bg'}
-          onPress={() =>
-            void run('bg', async () => {
-              // Android 11+: opens Bond's own location permission page (the
-              // closest Android allows). If it won't ask again: App info.
-              if (snap.locationBg === 'ask') await requestBackgroundPermission();
-              else await openAppSettings();
-            })
-          }
-        />,
-      );
-    }
-    if (fg && !snap.shareLocation) {
-      actions.push(
-        <Button
-          key="share-loc"
-          label={`Share my location with ${partnerName}`}
-          variant={bg ? 'primary' : 'secondary'}
-          disabled={!resetReady}
-          loading={locationSwitch.busy}
-          onPress={() => locationSwitch.request(true)}
-        />,
-      );
+      title = 'Location is on';
+      body = `${partnerName} sees your location, also while Bond is closed.`;
     }
   } else if (step === 'battery') {
-    icon = 'battery-half-outline';
-    title = 'Battery & background updates';
-    body =
-      `${partnerName} can see your battery level and get an alert when it is low, if you turn sharing on. ` +
-      'To send updates while Bond is closed, Android must not restrict Bond in the background: in Battery, choose "Unrestricted" ' +
-      '(or "Don\'t optimize"), and in Mobile data, allow background data. Bond opens those pages; only you can change them.';
+    icon = 'sync';
+    title = 'Stay in sync, always';
+    body = `Let Bond run in the background so your battery and screen time stay up to date for ${partnerName}, even when the app is closed.`;
     const opt = snap.batteryOptimized;
-    rows.push({
-      label: 'Battery optimization',
+    checks.push({
+      label: opt === false ? 'Battery: Unrestricted' : opt === true ? 'Battery: Android may pause Bond' : 'Battery: Android didn’t say',
       ok: opt === null ? null : !opt,
-      text: opt === null ? "Android didn't say" : opt ? 'On: updates may be delayed for hours' : 'Off for Bond (unrestricted)',
     });
-    rows.push({ label: 'Background data', ok: null, text: 'Check in App info > Mobile data (Android does not report it)' });
-    rows.push({ label: `Shared with ${partnerName}`, ok: snap.shareBattery, text: snap.shareBattery ? 'On' : 'Off' });
-    if (opt !== false) {
-      actions.push(
-        <Button key="opt" label="Open battery settings" variant="secondary" icon="settings-outline" onPress={() => void openBatteryOptimizationSettings()} />,
-      );
-    }
-    actions.push(<Button key="data" label="Open App info" variant="secondary" icon="cellular-outline" onPress={() => void openAppSettings()} />);
-    if (!snap.shareBattery) {
-      actions.push(
-        <Button
-          key="share-bat"
-          label={`Share my battery with ${partnerName}`}
-          disabled={!resetReady}
-          loading={busy === 'share-battery'}
-          onPress={() => void shareBattery()}
-        />,
-      );
+    checks.push({
+      label: 'Background data',
+      ok: null,
+      hint: 'Bond can’t check this. In App info › Mobile data, make sure background data is allowed.',
+      link: { label: 'Open App info', onPress: () => void openAppSettings() },
+    });
+    checks.push({ label: `Share my battery with ${partnerName}`, ok: snap.shareBattery });
+    if (opt === true) {
+      action = {
+        label: 'Allow background activity',
+        onPress: () => void openBatteryOptimizationSettings(),
+      };
+    } else if (!snap.shareBattery) {
+      action = {
+        label: 'Share my battery',
+        disabled: !resetReady,
+        loading: busy === 'share-battery',
+        onPress: () => void shareBattery(),
+      };
     }
   } else if (step === 'screen_time') {
-    icon = 'time-outline';
-    title = 'Screen Time';
-    const supported = getUsageSupport() === 'ready';
+    tone = 'pink';
+    icon = 'time';
+    title = 'Your screen time, together';
     body =
-      'Screen Time reads which apps you used today and for how long (never what you do inside them). Android only allows ' +
-      'this after you turn on "Usage access" for Bond in Settings. If Android shows "Restricted setting" (common when Bond ' +
-      'was installed from a file), Bond explains how to allow it.';
-    rows.push({ label: 'Usage access', ok: supported ? snap.usageAccess : null, text: !supported ? 'Not available in this version' : snap.usageAccess ? 'On' : 'Off' });
-    rows.push({ label: `Shared with ${partnerName}`, ok: snap.shareScreenTime, text: snap.shareScreenTime ? 'On' : 'Off' });
-    if (supported && !snap.usageAccess) {
-      actions.push(
-        <Button
-          key="ua"
-          label="Turn on Usage access"
-          icon="settings-outline"
-          onPress={() => void requestUsageAccess('Screen Time reads app names and time spent on this phone, never what you do inside apps.')}
-        />,
-      );
-    }
-    if (!snap.shareScreenTime) {
-      actions.push(
-        <Button
-          key="share-st"
-          label={`Share my screen time with ${partnerName}`}
-          variant={snap.usageAccess ? 'primary' : 'secondary'}
-          disabled={!resetReady}
-          loading={busy === 'share-screen'}
-          onPress={() => void shareScreenTime()}
-        />,
-      );
+      'Bond reads which apps you used today and for how long, never what you do inside them. Android asks you to turn on ' +
+      '"Usage access" for Bond first.';
+    if (!usageSupported) {
+      body = 'Screen Time needs the newest version of Bond on this phone.';
+    } else if (!snap.usageAccess) {
+      action = {
+        label: 'Turn on Usage access',
+        onPress: () => void requestUsageAccess('Screen Time reads app names and time spent on this phone, never what you do inside apps.'),
+      };
+    } else if (!snap.shareScreenTime) {
+      action = {
+        label: 'Share my screen time',
+        disabled: !resetReady,
+        loading: busy === 'share-screen',
+        onPress: () => void shareScreenTime(),
+      };
     }
   } else if (step === 'current_app') {
-    icon = 'phone-portrait-outline';
+    icon = 'phone-portrait';
     title = 'Currently Using';
     body =
-      `${partnerName} can see the name of the app open on your phone and when it was checked (only the latest, never a history, ` +
-      'nothing inside apps). It uses the same Usage access, checks about every 20 seconds while your screen is on, and shows a ' +
-      'quiet notification while it runs.';
+      `${partnerName} sees the name of the app open on your phone, only the latest and never what you do inside it. ` +
+      'It checks about every 20 seconds while your screen is on, with a quiet notification.';
     const st = currentApp.status;
-    const on = currentApp.switchValue;
-    rows.push({ label: 'Usage access', ok: getUsageSupport() === 'ready' ? hasUsageAccess() : null, text: hasUsageAccess() ? 'On' : 'Off' });
-    rows.push({
-      label: `Shared with ${partnerName}`,
-      ok: on,
-      text: on ? 'On' : st === 'needs-access' ? 'Waiting for Usage access' : st === 'unavailable' || st === 'needs-update' ? 'Not available' : 'Off',
-    });
-    if (st === 'needs-access' || (!hasUsageAccess() && getUsageSupport() === 'ready')) {
-      actions.push(<Button key="ua2" label="Turn on Usage access" icon="settings-outline" onPress={currentApp.openAccessSettings} />);
-    }
-    if (!on && st !== 'needs-access' && st !== 'unavailable' && st !== 'needs-update') {
-      actions.push(
-        <Button
-          key="share-ca"
-          label="Share the app I'm using"
-          variant={hasUsageAccess() ? 'primary' : 'secondary'}
-          disabled={!resetReady || currentApp.switchDisabled}
-          loading={currentApp.busy}
-          onPress={() => currentApp.toggle(true)}
-        />,
-      );
+    if (st === 'unavailable' || st === 'needs-update' || !usageSupported) {
+      body = 'Currently Using needs the newest version of Bond on this phone.';
+    } else if (!hasUsageAccess()) {
+      action = { label: 'Turn on Usage access', onPress: currentApp.openAccessSettings };
+    } else if (!currentAppOn) {
+      action = {
+        label: 'Share the app I’m using',
+        disabled: !resetReady || currentApp.switchDisabled,
+        loading: currentApp.busy,
+        onPress: () => currentApp.toggle(true),
+      };
     }
   }
 
-  const last = index === SHARING_STEPS.length - 1;
+  const position = FEATURE_STEPS.indexOf(step as FeatureStep);
+  const isLast = step === FEATURE_STEPS[FEATURE_STEPS.length - 1];
 
   return (
     <SafeAreaView style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.progress} accessibilityLabel={`Step ${index + 1} of ${SHARING_STEPS.length}`}>
-          {SHARING_STEPS.map((s, i) => (
-            <View key={s} style={[styles.dot, i <= index && styles.dotDone]} />
+      <View style={styles.header}>
+        <Pressable onPress={back} hitSlop={12} accessibilityRole="button" accessibilityLabel="Back" style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={22} color={colors.subtext} />
+        </Pressable>
+        <View style={styles.dots}>
+          {FEATURE_STEPS.map((s, i) => (
+            <View key={s} style={[styles.dotSmall, i === position && styles.dotActive, i < position && styles.dotDone]} />
           ))}
         </View>
-        <Text style={styles.stepText}>
-          Sharing setup · {index + 1} of {SHARING_STEPS.length}
+        <Text style={styles.stepLabel}>
+          Step {position + 1} of {FEATURE_STEPS.length}
         </Text>
+      </View>
 
-        {resetFailed ? (
-          <Card style={styles.warnCard}>
-            <Text style={styles.body}>
-              Bond couldn&apos;t reach the server to start this pairing with everything off, so nothing can be turned on yet.
-              Check your connection.
-            </Text>
-            <Button label="Try again" small onPress={() => void prepare()} style={{ marginTop: spacing.sm, alignSelf: 'flex-start' }} />
-          </Card>
-        ) : null}
-
-        {step ? (
-          <>
-            <View style={styles.iconWrap}>
-              <Ionicons name={icon} size={28} color={colors.primary} />
+      {step ? (
+        <ScrollView contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
+          <ResetWarning failed={resetFailed} onRetry={() => void prepare()} />
+          <Illustration icon={icon} tone={tone} />
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.body}>{body}</Text>
+          {tip ? (
+            <View style={styles.tip}>
+              <Text style={styles.tipText}>{tip}</Text>
             </View>
-            <Text style={styles.title}>{title}</Text>
-            <Text style={styles.body}>{body}</Text>
-            <Card style={styles.statusCard}>
-              {rows.map((r, i) => (
-                <View key={r.label} style={[styles.row, i > 0 && styles.divider]}>
+          ) : null}
+          {checks.length ? (
+            <View style={styles.checks}>
+              {checks.map((c) => (
+                <View key={c.label} style={styles.checkRow}>
                   <Ionicons
-                    name={r.ok === true ? 'checkmark-circle' : r.ok === false ? 'ellipse-outline' : 'remove-circle-outline'}
+                    name={c.ok === true ? 'checkmark-circle' : c.ok === false ? 'ellipse-outline' : 'information-circle-outline'}
                     size={18}
-                    color={r.ok === true ? colors.success : colors.muted}
+                    color={c.ok === true ? colors.success : colors.muted}
                   />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.rowLabel}>{r.label}</Text>
-                    <Text style={styles.rowText}>{r.text}</Text>
+                    <Text style={styles.checkLabel}>{c.label}</Text>
+                    {c.hint ? <Text style={styles.checkHint}>{c.hint}</Text> : null}
+                    {c.link ? (
+                      <Text style={styles.checkLink} onPress={c.link.onPress} accessibilityRole="link">
+                        {c.link.label}
+                      </Text>
+                    ) : null}
                   </View>
                 </View>
               ))}
-            </Card>
-            <View style={styles.actions}>{actions}</View>
+            </View>
+          ) : null}
+        </ScrollView>
+      ) : (
+        <View style={styles.loading}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      )}
+
+      <View style={styles.bottom}>
+        <PrivacyNote text={note} />
+        {action ? (
+          <>
+            <Button label={action.label} onPress={action.onPress} loading={action.loading} disabled={!step || action.disabled} />
+            <Button label="Not now" variant="ghost" disabled={!step || finishing} onPress={next} style={styles.notNow} />
           </>
         ) : (
-          <Text style={styles.body}>Loading…</Text>
+          <Button label={isLast ? 'Continue' : 'Next'} disabled={!step} loading={finishing} onPress={next} />
         )}
-      </ScrollView>
-
-      <View style={styles.footer}>
-        {index > 0 ? (
-          <Button label="Back" variant="ghost" onPress={() => void go(index - 1)} style={styles.footerBtn} />
-        ) : (
-          <View style={styles.footerBtn} />
-        )}
-        <Button label="Not now" variant="ghost" disabled={!step || finishing} onPress={() => void go(index + 1)} style={styles.footerBtn} />
-        <Button
-          label={last ? 'Continue' : 'Next'}
-          disabled={!step}
-          loading={finishing}
-          onPress={() => void go(index + 1)}
-          style={styles.footerBtn}
-        />
       </View>
     </SafeAreaView>
   );
 }
 
-type StatusRow = { label: string; ok: boolean | null; text: string };
+/** The large round picture at the top of each step. */
+function Illustration({ icon, tone }: { icon: IconName; tone: Tone }) {
+  useThemeVersion();
+  const pink = tone === 'pink';
+  return (
+    <View style={styles.illustration} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <View style={[styles.ring, pink ? styles.pinkSoft : styles.blueSoft]}>
+        <View style={styles.ringInner}>
+          <Ionicons name={icon} size={52} color={pink ? colors.pink : colors.blue} />
+        </View>
+      </View>
+      <Ionicons name="sparkles" size={20} color={colors.pink} style={styles.sparkleTop} />
+      <Ionicons name="sparkles" size={13} color={colors.blue} style={styles.sparkleBottom} />
+    </View>
+  );
+}
+
+function PrivacyNote({ text }: { text: string }) {
+  useThemeVersion();
+  return (
+    <View style={styles.privacy}>
+      <Ionicons name="lock-closed-outline" size={12} color={colors.muted} />
+      <Text style={styles.privacyText}>{text}</Text>
+    </View>
+  );
+}
+
+function ResetWarning({ failed, onRetry }: { failed: boolean; onRetry: () => void }) {
+  useThemeVersion();
+  if (!failed) return null;
+  return (
+    <Card style={styles.warnCard}>
+      <Text style={styles.checkHint}>
+        Bond couldn&apos;t reach the server to start this pairing with everything off, so nothing can be turned on yet. Check your
+        connection.
+      </Text>
+      <Button label="Try again" small onPress={onRetry} style={{ marginTop: spacing.sm, alignSelf: 'flex-start' }} />
+    </Card>
+  );
+}
 
 const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl },
-  progress: { flexDirection: 'row', gap: spacing.xs, marginTop: spacing.sm },
-  dot: { flex: 1, height: 4, borderRadius: radius.pill, backgroundColor: colors.track },
-  dotDone: { backgroundColor: colors.primary },
-  stepText: { ...font.small, color: colors.muted, marginTop: spacing.sm },
-  warnCard: { marginTop: spacing.md },
-  iconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: radius.pill,
-    backgroundColor: colors.primarySoft,
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
+  // Overview
+  overview: { padding: spacing.xl, paddingBottom: spacing.lg },
+  overviewTitle: { ...font.title, color: colors.text, marginTop: spacing.lg },
+  overviewSub: { ...font.body, color: colors.subtext, marginTop: spacing.sm, lineHeight: 21 },
+  list: { marginTop: spacing.xl, gap: spacing.sm },
+  listRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  listIcon: { width: 38, height: 38, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  listTitle: { ...font.h3, fontSize: 15, color: colors.text },
+  listDesc: { ...font.small, color: colors.subtext, marginTop: 1 },
+  allowPill: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.primarySoft },
+  allowText: { ...font.small, fontWeight: '700', color: colors.primary },
+  blueSoft: { backgroundColor: colors.blueSoft },
+  pinkSoft: { backgroundColor: colors.pinkSoft },
+
+  // Step header
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.sm },
+  backBtn: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  dots: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dotSmall: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.track },
+  dotDone: { backgroundColor: colors.primary, opacity: 0.45 },
+  dotActive: { width: 22, backgroundColor: colors.primary, opacity: 1 },
+  stepLabel: { ...font.small, color: colors.primary, fontWeight: '700' },
+
+  // Step body
+  stepContent: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: spacing.xl, paddingVertical: spacing.lg },
+  illustration: { alignSelf: 'center', width: 190, height: 190, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xl },
+  ring: { width: 176, height: 176, borderRadius: 88, alignItems: 'center', justifyContent: 'center' },
+  ringInner: {
+    width: 124,
+    height: 124,
+    borderRadius: 62,
+    backgroundColor: colors.card,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: spacing.xl,
   },
-  title: { ...font.title, color: colors.text, marginTop: spacing.md },
-  body: { ...font.body, color: colors.subtext, marginTop: spacing.sm, lineHeight: 22 },
-  statusCard: { marginTop: spacing.lg, paddingVertical: spacing.xs },
-  row: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, paddingVertical: spacing.sm },
-  divider: { borderTopWidth: 1, borderTopColor: colors.border },
-  rowLabel: { ...font.body, fontWeight: '600', color: colors.text },
-  rowText: { ...font.small, color: colors.subtext, marginTop: 2 },
-  actions: { marginTop: spacing.lg, gap: spacing.sm },
-  footer: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    padding: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.background,
-  },
-  footerBtn: { flex: 1 },
+  sparkleTop: { position: 'absolute', top: 6, right: 8 },
+  sparkleBottom: { position: 'absolute', bottom: 22, left: 6 },
+  title: { ...font.title, fontSize: 24, color: colors.text, textAlign: 'center' },
+  body: { ...font.body, color: colors.subtext, textAlign: 'center', marginTop: spacing.sm, lineHeight: 22 },
+  tip: { marginTop: spacing.lg, borderRadius: radius.md, backgroundColor: colors.pinkSoft, padding: spacing.md },
+  tipText: { ...font.small, color: colors.pink, textAlign: 'center', lineHeight: 18 },
+  checks: { marginTop: spacing.lg, gap: spacing.md, alignSelf: 'stretch' },
+  checkRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
+  checkLabel: { ...font.small, color: colors.text, fontWeight: '600' },
+  checkHint: { ...font.small, color: colors.subtext, marginTop: 2, lineHeight: 18 },
+  checkLink: { ...font.small, color: colors.primary, fontWeight: '700', marginTop: 4 },
+  warnCard: { marginBottom: spacing.lg },
+
+  // Bottom
+  bottom: { paddingHorizontal: spacing.xl, paddingBottom: spacing.lg, paddingTop: spacing.sm, gap: spacing.sm },
+  privacy: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: spacing.xs },
+  privacyText: { ...font.tiny, fontWeight: '500', letterSpacing: 0, color: colors.muted },
+  notNow: { marginTop: -spacing.xs },
 }));

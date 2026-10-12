@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect } from '@/components/Redirect';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/Avatar';
@@ -24,6 +24,27 @@ export default function ColorSetup() {
     myProfile?.avatar_color === 'blue' || myProfile?.avatar_color === 'pink' ? myProfile.avatar_color : null,
   );
   const [busy, setBusy] = useState(false);
+  // The avatar letter comes from the name just chosen in the name step. Read
+  // it from the server too, so a profile that wasn't refreshed yet (still the
+  // default "Me") can't show the wrong letter.
+  const [fresh, setFresh] = useState<string | null>(null);
+  const name = fresh ?? myProfile?.display_name ?? null;
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    void supabase
+      .from('profiles')
+      .select('display_name')
+      .eq('id', userId)
+      .maybeSingle()
+      .then(({ data }) => {
+        const latest = (data as { display_name?: string } | null)?.display_name?.trim();
+        if (!cancelled && latest) setFresh(latest);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   // This screen belongs to the color step only (see name-setup.tsx).
   const isMyStep = pairingSetup === 'color' || (pairingSetup === 'done' && profileStep === 'color');
@@ -59,7 +80,7 @@ export default function ColorSetup() {
                 onPress={() => setSelected(choice.key)}
                 style={[styles.choice, isSel && styles.choiceSelected]}
               >
-                <Avatar name={myProfile?.display_name} size={88} tint={choice.color} />
+                <Avatar name={name} size={88} tint={choice.color} />
                 <Text style={styles.choiceLabel}>{choice.label}</Text>
                 {isSel ? (
                   <View style={styles.check}>

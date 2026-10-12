@@ -109,21 +109,18 @@ class BondUsageModule : Module() {
     /** Is "Usage access" turned on for Bond right now? */
     Function("hasUsageAccess") { UsageStatsReader.hasUsageAccess(context) }
 
-    /** Open Android's Usage access screen (Bond's own page when supported). */
+    /**
+     * Open Android's Usage access LIST (the person finds Bond there). Not
+     * Bond's own page ("package:" link): on some phones a sideloaded app's own
+     * page shows "Restricted setting" while the same switch in the list works.
+     */
     Function("openUsageAccessSettings") {
       val ctx = context
-      val direct = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-        .setData(Uri.parse("package:${ctx.packageName}"))
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       val list = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       try {
-        ctx.startActivity(direct)
+        ctx.startActivity(list)
       } catch (_: Exception) {
-        try {
-          ctx.startActivity(list)
-        } catch (_: Exception) {
-          ctx.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }
+        ctx.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
       }
     }
 

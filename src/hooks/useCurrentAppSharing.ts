@@ -226,7 +226,7 @@ export function currentAppStatusText(status: CurrentAppStatus, partnerName: stri
       return `On. ${partnerName} sees the app open on your phone (checked about every 20 seconds while the screen is on).`;
     case 'starting':
       return ready
-        ? 'On. Starting the background checkâ€¦ If this stays, open Bond again (Android only starts it while Bond is open).'
+        ? 'On. Starting the background check… If this stays, open Bond again (Android only starts it while Bond is open).'
         : 'On. It starts once setup is finished.';
     case 'open-only':
       return 'On, but this copy of Bond can only check when Bond is opened or left. Install the newest version for background checks.';
@@ -241,7 +241,7 @@ export function currentAppStatusText(status: CurrentAppStatus, partnerName: stri
     case 'error':
       return "Couldn't read this setting. Check your connection.";
     default:
-      return 'Checkingâ€¦';
+      return 'Checking…';
   }
 }
 

@@ -38,8 +38,8 @@ import { supabase } from './supabase';
 export type SetupStep = 'sharing' | 'name' | 'color';
 export type PairingSetupState = 'unknown' | SetupStep | 'done';
 
-/** The screens inside Sharing setup, in order (one at a time). */
-export const SHARING_STEPS = ['notifications', 'location', 'battery', 'screen_time', 'current_app'] as const;
+/** The screens inside Sharing setup, in order (one at a time; 'overview' lists the others). */
+export const SHARING_STEPS = ['overview', 'notifications', 'location', 'battery', 'screen_time', 'current_app'] as const;
 export type SharingStep = (typeof SHARING_STEPS)[number];
 
 type SetupRecord = {
