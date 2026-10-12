@@ -540,11 +540,10 @@ export default function Settings() {
               <Row icon="information-circle-outline" label="Version" value={appVersion} />
             </Pressable>
           ) : null}
-          {__DEV__ ? (
-            <Pressable onPress={() => router.push('/background-diagnostics')} accessibilityRole="button">
-              <Row icon="pulse-outline" label="Background diagnostics (dev)" chevron />
-            </Pressable>
-          ) : null}
+          {/* Testing builds: visible, so testers can copy or share the log. */}
+          <Pressable onPress={() => router.push('/background-diagnostics')} accessibilityRole="button">
+            <Row icon="pulse-outline" label="Background diagnostics" chevron />
+          </Pressable>
           <Pressable onPress={() => void openLegalPage('privacy')} accessibilityRole="link">
             <Row icon="document-text-outline" label="Privacy Policy" chevron />
           </Pressable>

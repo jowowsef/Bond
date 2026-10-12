@@ -106,6 +106,33 @@ class BondUsageModule : Module() {
       mapOf("installer" to installer, "sdkInt" to android.os.Build.VERSION.SDK_INT)
     }
 
+    /**
+     * What Android itself restricts for Bond in the background (for the
+     * diagnostics screen; read-only, null = this Android version can't say):
+     *  - backgroundRestricted: the person chose "Restricted" battery use;
+     *  - dataSaver: "enabled" = Data Saver blocks Bond's background data,
+     *    "whitelisted" = Bond is allowed anyway, "disabled" = Data Saver off;
+     *  - standbyBucket: how often Android lets Bond run (lower is better).
+     */
+    Function("getBackgroundRestrictions") {
+      val ctx = context
+      val sdk = android.os.Build.VERSION.SDK_INT
+      val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+      val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+      val usm = ctx.getSystemService(Context.USAGE_STATS_SERVICE) as? android.app.usage.UsageStatsManager
+      val restricted: Boolean? = if (sdk >= android.os.Build.VERSION_CODES.P) runCatching { am?.isBackgroundRestricted }.getOrNull() else null
+      val dataSaver: String? = runCatching {
+        when (cm?.restrictBackgroundStatus) {
+          android.net.ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED -> "enabled"
+          android.net.ConnectivityManager.RESTRICT_BACKGROUND_STATUS_WHITELISTED -> "whitelisted"
+          android.net.ConnectivityManager.RESTRICT_BACKGROUND_STATUS_DISABLED -> "disabled"
+          else -> null
+        }
+      }.getOrNull()
+      val bucket: Int? = if (sdk >= android.os.Build.VERSION_CODES.P) runCatching { usm?.appStandbyBucket }.getOrNull() else null
+      mapOf("backgroundRestricted" to restricted, "dataSaver" to dataSaver, "standbyBucket" to bucket)
+    }
+
     /** Is "Usage access" turned on for Bond right now? */
     Function("hasUsageAccess") { UsageStatsReader.hasUsageAccess(context) }
 

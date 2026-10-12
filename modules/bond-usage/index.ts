@@ -50,6 +50,12 @@ type BondUsageNative = {
   logBackgroundDiagnostic?(message: string): void;
   /** Which app installed Bond (null = unknown / sideloaded) and the Android version. */
   getInstallSource?(): { installer: string | null; sdkInt: number };
+  /** What Android restricts for Bond in the background (diagnostics only). */
+  getBackgroundRestrictions?(): {
+    backgroundRestricted: boolean | null;
+    dataSaver: 'enabled' | 'whitelisted' | 'disabled' | null;
+    standbyBucket: number | null;
+  };
 };
 
 const BondUsage = requireOptionalNativeModule<BondUsageNative>('BondUsage');
