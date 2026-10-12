@@ -83,6 +83,7 @@ class CurrentAppTaskConsumer(context: Context, taskManagerUtils: TaskManagerUtil
       )
       putExtra(CurrentAppService.EXTRA_WATCH_APPS, (options?.get("watchApps") as? Boolean) ?: true)
       putExtra(CurrentAppService.EXTRA_WATCH_BATTERY, (options?.get("watchBattery") as? Boolean) ?: false)
+      putExtra(CurrentAppService.EXTRA_WATCH_SCREEN_TIME, (options?.get("watchScreenTime") as? Boolean) ?: false)
     }
     try {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(intent) else ctx.startService(intent)

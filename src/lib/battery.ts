@@ -61,7 +61,7 @@ export async function disableBatterySharing(userId: string): Promise<{ ok: boole
   // Stop the battery part of the background service at once (app checks for
   // Currently Using, if on, keep running).
   const m = serviceModes();
-  if (m.running && m.battery) await updateServiceModes({ apps: m.apps, battery: false });
+  if (m.running && m.battery) await updateServiceModes({ apps: m.apps, battery: false, screenTime: m.screenTime });
   // Remove the stored value so the partner doesn't keep seeing an old reading.
   await supabase.from('battery_status').delete().eq('user_id', userId);
   return { ok: true };

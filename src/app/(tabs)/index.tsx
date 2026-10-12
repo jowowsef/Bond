@@ -18,7 +18,6 @@ import { usePartnerCurrentApp } from '@/hooks/useCurrentApp';
 import { useMyUsage } from '@/hooks/useMyUsage';
 import { usePartnerUsage } from '@/hooks/usePartnerUsage';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
-import { useWebProtection } from '@/hooks/useWebProtection';
 import { syncBatteryIfSharing } from '@/lib/battery';
 import { syncCurrentAppIfSharing } from '@/lib/currentApp';
 import { dayKey, greeting, timeAgo } from '@/lib/format';
@@ -40,18 +39,10 @@ export default function Home() {
     useCouple();
   const { logs, reload: reloadActivity } = useActivityFeed(3);
   const myBattery = useMyBattery();
-  const web = useWebProtection(userId);
-  const webSubtitle =
-    web.support !== 'ready' || !web.status
-      ? 'Block adult websites on this phone'
-      : web.status.running
-        ? 'On for this phone'
-        : web.status.enabled
-          ? 'Paused on this phone'
-          : 'Off. Tap to set up';
   const {
     battery: partnerBattery,
     stale: partnerBatteryStale,
+    sharing: partnerBatterySharing,
     reload: reloadPartnerBattery,
   } = usePartnerBattery(partnerId);
   // Loaded here (not inside the cards) so pull to refresh re-reads them too.
@@ -169,14 +160,6 @@ export default function Home() {
             accentBg={colors.blueSoft}
             onPress={() => router.push('/location')}
           />
-          <NavCard
-            icon="shield-checkmark-outline"
-            title="Web Protection"
-            subtitle={webSubtitle}
-            accent={colors.primary}
-            accentBg={colors.primarySoft}
-            onPress={() => router.push('/controls')}
-          />
         </View>
 
         {/* Today's screen time for both; a tap opens the detailed statistics. */}
@@ -225,6 +208,9 @@ export default function Home() {
                 </>
               ) : partnerBattery ? (
                 <Text style={styles.batteryMuted}>Unavailable</Text>
+              ) : partnerBatterySharing ? (
+                // Sharing is on but their phone hasn't sent a reading yet.
+                <Text style={styles.batteryMuted}>Waiting for update</Text>
               ) : (
                 <Text style={styles.batteryMuted}>Not shared</Text>
               )}

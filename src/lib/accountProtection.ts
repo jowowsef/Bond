@@ -4,6 +4,11 @@ import { supabase } from './supabase';
 /**
  * ACCOUNT PROTECTION (Phase 1: email + password on the EXISTING account)
  *
+ * Accounts that sign in with Google are already protected by Google: they
+ * are shown as protected and are never asked for a password (status
+ * 'google'). Sensitive actions re-check them with Google instead
+ * (googleAuth.ts reauthenticateWithGoogle).
+ *
  * Every Bond phone starts with an anonymous Supabase account. Protecting it
  * adds an email and password to that SAME account, so its user id, couple
  * and all data stay exactly as they are. This follows Supabase's documented
@@ -27,15 +32,43 @@ export type ProtectionStatus =
   /** Email confirmed on this account; a password still needs to be added. */
   | { kind: 'needs-password'; email: string }
   /** Email confirmed and password set. */
-  | { kind: 'protected'; email: string };
+  | { kind: 'protected'; email: string }
+  /**
+   * Signed in with Google (no Bond password). Google already protects the
+   * account: on a new phone, "Continue with Google" brings it back. No
+   * password is ever asked for.
+   */
+  | { kind: 'google'; email: string };
 
 export type Result<T = void> = { ok: true; value: T } | { ok: false; message: string; code?: string };
 
 const PASSWORD_FLAG = 'bond_password_set';
 
+/** Does this account sign in with Google? (From Supabase's own user record.) */
+export function hasGoogleSignIn(user: Pick<User, 'app_metadata' | 'identities'> | null | undefined): boolean {
+  if (!user) return false;
+  const providers = (user.app_metadata?.providers as string[] | undefined) ?? [];
+  return providers.includes('google') || (user.identities ?? []).some((i) => i.provider === 'google');
+}
+
+/** Has a Bond password been set on this account? */
+export function hasPassword(user: Pick<User, 'user_metadata'> | null | undefined): boolean {
+  return user?.user_metadata?.[PASSWORD_FLAG] === true;
+}
+
+/** The Google account id ("sub") linked to this Bond account, if any. */
+export function linkedGoogleSub(user: Pick<User, 'identities'> | null | undefined): string | null {
+  const g = (user?.identities ?? []).find((i) => i.provider === 'google');
+  if (!g) return null;
+  const sub = (g.identity_data as { sub?: unknown } | undefined)?.sub;
+  return typeof sub === 'string' && sub ? sub : typeof g.id === 'string' && g.id ? g.id : null;
+}
+
 function statusFromUser(user: User): ProtectionStatus {
   const confirmed = !!user.email && !!user.email_confirmed_at;
-  if (confirmed && user.user_metadata?.[PASSWORD_FLAG] === true) return { kind: 'protected', email: user.email! };
+  if (confirmed && hasPassword(user)) return { kind: 'protected', email: user.email! };
+  // Google accounts never need a Bond password (they never created one).
+  if (hasGoogleSignIn(user) && user.email) return { kind: 'google', email: user.email };
   if (confirmed) return { kind: 'needs-password', email: user.email! };
   if (user.new_email) return { kind: 'pending', email: user.new_email };
   return { kind: 'unprotected' };
@@ -116,7 +149,9 @@ export async function linkEmail(expectedUserId: string, email: string): Promise<
   const same = sameAccount(before.value, expectedUserId);
   if (!same.ok) return same;
   const current = statusFromUser(before.value);
-  if (current.kind === 'protected' || current.kind === 'needs-password') return { ok: true, value: current };
+  if (current.kind === 'protected' || current.kind === 'needs-password' || current.kind === 'google') {
+    return { ok: true, value: current };
+  }
 
   const { data, error } = await supabase.auth.updateUser({ email: email.trim().toLowerCase() });
   if (error || !data.user) return { ok: false, message: friendly(error), code: error?.code };

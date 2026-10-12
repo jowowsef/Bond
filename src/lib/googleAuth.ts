@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { createVerificationClient, supabase } from './supabase';
 
 /**
  * GOOGLE SIGN-IN (native Android account picker, react-native-nitro-google-signin,
@@ -162,6 +162,75 @@ export async function continueWithGoogle(): Promise<GoogleResult> {
   log('signed in');
   await startNameStepIfNew(data.user.id, data.user.created_at);
   return { ok: true, mode: 'signed-in', userId: data.user.id };
+}
+
+export type ReauthResult = { ok: true } | { ok: false; cancelled?: true; message: string };
+
+/** The claims of a Google ID token (read only to choose the account; Supabase verifies it). */
+function idTokenClaims(token: string): { sub?: string; aud?: string | string[]; exp?: number; iat?: number } | null {
+  try {
+    const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(globalThis.atob(part.padEnd(part.length + ((4 - (part.length % 4)) % 4), '=')));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Re-check a Google-only account with Google right now, before a sensitive
+ * action (for example deleting the account). No password is involved.
+ *
+ *  1. The person picks their Google account again (fresh ID token, new nonce).
+ *  2. On the phone: it must be the SAME Google account linked to this Bond
+ *     account (same Google id), recently issued for Bond. A different Google
+ *     account stops here, so it can never create or open another Bond account.
+ *  3. Supabase verifies the token (Google signature, audience, nonce) through
+ *     a separate in-memory client, so the app's own session is never replaced,
+ *     and must answer with the same Bond user id. That check session is then
+ *     signed out (revoked) right away.
+ */
+export async function reauthenticateWithGoogle(expectedUserId: string): Promise<ReauthResult> {
+  if (getGoogleSupport() === 'not-configured') {
+    return { ok: false, message: "Google sign-in isn't set up for this build yet." };
+  }
+  const { data: me, error: meError } = await supabase.auth.getUser();
+  if (meError || !me.user || me.user.id !== expectedUserId) {
+    return { ok: false, message: "Couldn't check your account. Check your connection and try again." };
+  }
+  const google = me.user.identities?.find((i) => i.provider === 'google');
+  const sub = (google?.identity_data as { sub?: unknown } | undefined)?.sub ?? google?.id;
+  if (!google || typeof sub !== 'string' || !sub) {
+    return { ok: false, message: 'This account does not use Google sign-in.' };
+  }
+
+  const picked = await pickGoogleAccount();
+  if (!picked.ok) return picked;
+
+  const claims = idTokenClaims(picked.idToken);
+  const nowS = Math.floor(Date.now() / 1000);
+  const audOk = Array.isArray(claims?.aud) ? claims!.aud.includes(WEB_CLIENT_ID) : claims?.aud === WEB_CLIENT_ID;
+  if (!claims || claims.sub !== sub) {
+    return { ok: false, message: 'Choose the same Google account you use for Bond. Nothing was changed.' };
+  }
+  if (!audOk || !claims.exp || claims.exp <= nowS || !claims.iat || nowS - claims.iat > 10 * 60) {
+    return { ok: false, message: 'Google sign-in could not be verified. Please try again.' };
+  }
+
+  const check = createVerificationClient();
+  try {
+    const { data, error } = await check.auth.signInWithIdToken({ provider: 'google', token: picked.idToken, nonce: picked.rawNonce });
+    if (error || !data.user) {
+      log('reauth verification failed', error ? `${error.code ?? ''} ${error.message}` : 'no user');
+      return { ok: false, message: friendly(error) };
+    }
+    if (data.user.id !== expectedUserId) {
+      return { ok: false, message: 'That Google account belongs to a different Bond account. Nothing was changed.' };
+    }
+    return { ok: true };
+  } finally {
+    // Revoke only the check session (the app's own session stays signed in).
+    await check.auth.signOut({ scope: 'local' }).catch(() => undefined);
+  }
 }
 
 /**

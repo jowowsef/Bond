@@ -35,7 +35,6 @@ export const PRIVACY_POLICY: LegalDoc = {
         'Your partner only sees what you choose to share, and you can change each sharing switch in Settings.',
         'Bond has no ads, no analytics or tracking tools, and does not sell your information.',
         'Location is collected only while location sharing is on and Bond is open, and only your latest position is kept.',
-        'Web Protection works on your phone. Bond does not store or upload the websites you visit.',
         'You can delete your account in Settings at any time.',
       ],
     },
@@ -52,7 +51,6 @@ export const PRIVACY_POLICY: LegalDoc = {
         'Screen Time (only after you turn on Android "Usage access" for Bond): which apps were in use on your phone and for how long. Hourly details and app icons stay on your phone. If screen-time sharing is on, your daily total, app opens, and your top apps (name, package name, time used) are uploaded for your partner.',
         'Currently Using (only while it is on and Android "Usage access" is allowed): the name of the app open in front on your phone and when it was checked. Only the latest one is stored, never a history, and nothing inside apps (no messages, notifications, typed text or passwords).',
         'Shared calendar: the events you or your partner create (title, date, times, place, notes, reminder and repeat settings) and who created them.',
-        'Web Protection status: whether protection is on or paused on your phone (not the websites you visit).',
         'Notifications: whether notifications are allowed, and, if push notifications are set up, a device push token.',
         'Alerts: low-battery alerts about your partner (their name and battery level), a notice when your partner unpairs, and reminders for shared calendar events.',
         'Technical logs: our hosting provider records technical information such as your IP address and the time of requests, to keep Bond working and secure.',
@@ -63,7 +61,6 @@ export const PRIVACY_POLICY: LegalDoc = {
       bullets: [
         'Your sign-in session, a copy of your couple information (so Bond opens quickly), and your preferences such as the theme.',
         'Screen Time details beyond the shared daily summary, and app icons.',
-        'Web Protection: the list of blocked websites and the on/off setting. Bond does not log the websites you look up.',
         'Location troubleshooting details shown under "Location details".',
       ],
     },
@@ -82,7 +79,7 @@ export const PRIVACY_POLICY: LegalDoc = {
       body: [
         'Your partner can always see your name, avatar, that you are paired, the shared activity history and the shared calendar. ' +
           'They can see your location, battery, screen time and the app you are using only while the matching switch is on in your Settings. ' +
-          'They can see whether Web Protection is on for your phone. Bond never lets your partner change permissions on your phone.',
+          'Bond never lets your partner change permissions on your phone.',
       ],
     },
     {
@@ -91,8 +88,6 @@ export const PRIVACY_POLICY: LegalDoc = {
         `Supabase (database, sign-in, file storage, live updates and account emails). Your data is stored on Supabase servers in ${LEGAL.supabaseRegion}.`,
         "Your phone's location service (Google on most Android phones) receives your coordinates to look up an approximate area name.",
         'OpenFreeMap provides the map. It receives your IP address and which map area is shown.',
-        'Cloudflare (only while Web Protection is on) answers website-name lookups to help block adult and malware sites.',
-        'GitHub hosts the adult-website list that Web Protection downloads; it sees your IP address.',
         'Expo and Google Firebase (only if push notifications are enabled) deliver notification text to your phone.',
         'These providers may process data outside the Philippines. We rely on their security and contractual commitments.',
       ],
@@ -187,7 +182,6 @@ export const TERMS_OF_USE: LegalDoc = {
       bullets: [
         "Location, battery and screen time depend on your phone, its settings and Android. They can be delayed, approximate or unavailable, and must not be relied on for safety or emergencies.",
         'Background updates and notifications depend on Android and your network and can be delayed.',
-        'Web Protection reduces access to many adult websites but cannot block all of them, and some apps, VPNs or private DNS settings can bypass it.',
         'Do not rely on Bond in an emergency. Contact local emergency services.',
       ],
     },

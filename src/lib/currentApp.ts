@@ -285,7 +285,7 @@ export async function enableCurrentAppSharing(userId: string): Promise<{ ok: boo
 /** Turn sharing off and remove the stored value (and stop the app checks; battery keeps its part). */
 export async function disableCurrentAppSharing(userId: string): Promise<{ ok: boolean; message?: string }> {
   const m = serviceModes();
-  if (m.running && m.apps) await updateServiceModes({ apps: false, battery: m.battery });
+  if (m.running && m.apps) await updateServiceModes({ apps: false, battery: m.battery, screenTime: m.screenTime });
   const { error } = await supabase.from('privacy_settings').update({ share_current_app: false }).eq('user_id', userId);
   if (error && !isMissingSchema(error)) {
     return { ok: false, message: 'Could not turn this off. Check your connection and try again.' };

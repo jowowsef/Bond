@@ -152,7 +152,7 @@ export function useCurrentAppSharing(userId: string | null, partnerName: string)
     setSetting({ kind: 'off' }); // the switch follows right away; corrected below if it fails
     // Stop app checks at once; battery sharing (if on) keeps running.
     const m = serviceModes();
-    if (m.running) await updateServiceModes({ apps: false, battery: m.battery });
+    if (m.running) await updateServiceModes({ apps: false, battery: m.battery, screenTime: m.screenTime });
     const r = await disableCurrentAppSharing(userId);
     if (r.ok) await recordCurrentAppChoice('off');
     else setError(r.message ?? 'Could not turn this off.');

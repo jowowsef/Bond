@@ -3,14 +3,22 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, Text, TextInput, View } from 'react-native';
 import { Button } from '@/components/Button';
 import { deleteMyAccount } from '@/lib/accountDeletion';
+import { hasGoogleSignIn, hasPassword } from '@/lib/accountProtection';
+import { reauthenticateWithGoogle } from '@/lib/googleAuth';
 import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
 const CONFIRM_WORD = 'DELETE';
 
+/** A Google re-check counts for this long (then it is asked again). */
+const GOOGLE_RECHECK_MS = 5 * 60 * 1000;
+
 /**
  * Permanent account deletion. The person must type DELETE; the button stays
  * disabled until then, double taps are ignored, and errors keep the account.
+ * Accounts that sign in only with Google (no Bond password) must also confirm
+ * with Google right before (reauthenticateWithGoogle); they are never asked
+ * for a password they never created. Email/password accounts are unchanged.
  */
 export function DeleteAccountModal({
   visible,
@@ -27,7 +35,10 @@ export function DeleteAccountModal({
 }) {
   useThemeVersion();
   const router = useRouter();
-  const { resetSession } = useCouple();
+  const { resetSession, session } = useCouple();
+  const googleOnly = hasGoogleSignIn(session?.user) && !hasPassword(session?.user);
+  const [googleOkAt, setGoogleOkAt] = useState<number | null>(null);
+  const [checking, setChecking] = useState(false);
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,11 +48,30 @@ export function DeleteAccountModal({
     if (visible) {
       setTyped('');
       setError(null);
+      setGoogleOkAt(null);
     }
   }, [visible]);
 
+  // Shown as confirmed once checked; its 5-minute limit is enforced when Delete is pressed.
+  const googleConfirmed = !googleOnly || googleOkAt !== null;
+
+  async function confirmWithGoogle() {
+    if (checking || busy) return;
+    setChecking(true);
+    setError(null);
+    const r = await reauthenticateWithGoogle(userId);
+    setChecking(false);
+    if (r.ok) setGoogleOkAt(Date.now());
+    else if (!r.cancelled) setError(r.message);
+  }
+
   async function confirm() {
     if (busyRef.current || typed.trim().toUpperCase() !== CONFIRM_WORD) return;
+    if (googleOnly && (googleOkAt === null || Date.now() - googleOkAt >= GOOGLE_RECHECK_MS)) {
+      setGoogleOkAt(null);
+      setError(googleOkAt === null ? 'Confirm with Google first.' : 'Please confirm with Google again.');
+      return;
+    }
     busyRef.current = true;
     setBusy(true);
     setError(null);
@@ -61,7 +91,7 @@ export function DeleteAccountModal({
     router.replace('/welcome');
   }
 
-  const ready = typed.trim().toUpperCase() === CONFIRM_WORD;
+  const ready = typed.trim().toUpperCase() === CONFIRM_WORD && googleConfirmed;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={busy ? () => {} : onClose}>
@@ -80,7 +110,7 @@ export function DeleteAccountModal({
               </Text>
             ) : null}
             <Text style={styles.body}>
-              Settings on this phone (like Usage access or Web Protection) stay in Android until you change them there.
+              Settings on this phone (like Usage access) stay in Android until you change them there.
             </Text>
             <Text style={styles.label}>Type {CONFIRM_WORD} to confirm</Text>
             <TextInput
@@ -94,6 +124,26 @@ export function DeleteAccountModal({
               style={styles.input}
               accessibilityLabel={`Type ${CONFIRM_WORD} to confirm`}
             />
+            {googleOnly ? (
+              <>
+                <Text style={styles.label}>Confirm with Google</Text>
+                <Text style={styles.bullet}>
+                  {googleConfirmed
+                    ? 'Confirmed with Google.'
+                    : 'For your security, choose the Google account you use for Bond. No password is needed.'}
+                </Text>
+                {googleConfirmed ? null : (
+                  <Button
+                    label="Confirm with Google"
+                    variant="secondary"
+                    small
+                    onPress={confirmWithGoogle}
+                    loading={checking}
+                    disabled={busy}
+                  />
+                )}
+              </>
+            ) : null}
           </ScrollView>
           {error ? (
             <Text style={styles.error} accessibilityLiveRegion="polite">

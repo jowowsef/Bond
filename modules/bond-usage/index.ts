@@ -37,12 +37,14 @@ type BondUsageNative = {
       watchApps?: boolean;
       /** Battery changes for battery sharing. */
       watchBattery?: boolean;
+      /** Screen time summaries for screen time sharing (needs Usage access). */
+      watchScreenTime?: boolean;
     },
   ): Promise<void>;
   stopCurrentAppService?(taskName: string): Promise<void>;
   isCurrentAppServiceRunning?(): boolean;
-  getBackgroundServiceModes?(): { running: boolean; apps: boolean; battery: boolean };
-  updateBackgroundServiceModes?(apps: boolean, battery: boolean): boolean;
+  getBackgroundServiceModes?(): { running: boolean; apps: boolean; battery: boolean; screenTime?: boolean };
+  updateBackgroundServiceModes?(apps: boolean, battery: boolean, screenTime: boolean): boolean;
   getBackgroundDiagnostics?(): string[];
   clearBackgroundDiagnostics?(): void;
   logBackgroundDiagnostic?(message: string): void;

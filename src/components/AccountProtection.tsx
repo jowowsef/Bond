@@ -18,7 +18,7 @@ import {
 } from '@/lib/accountProtection';
 import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 
-type Step = 'loading' | 'load-error' | 'form' | 'pending' | 'needs-password' | 'reauth' | 'protected';
+type Step = 'loading' | 'load-error' | 'form' | 'pending' | 'needs-password' | 'reauth' | 'protected' | 'google';
 const RESEND_COOLDOWN_S = 60;
 
 /**
@@ -98,6 +98,12 @@ export function AccountProtection({ userId }: { userId: string }) {
   const apply = useCallback(
     async (status: ProtectionStatus, fromAction: boolean) => {
       if (status.kind === 'protected') return finish(status, fromAction);
+      if (status.kind === 'google') {
+        // Google already protects this account: never ask for a password.
+        setLinkedEmail(status.email);
+        setStep('google');
+        return;
+      }
       if (status.kind === 'pending') {
         setLinkedEmail(status.email);
         setStep('pending');
@@ -264,7 +270,7 @@ export function AccountProtection({ userId }: { userId: string }) {
   );
 
   const badge =
-    step === 'protected' ? (
+    step === 'protected' || step === 'google' ? (
       <StatusBadge label="Protected" tone="success" dot />
     ) : step === 'loading' || step === 'load-error' ? null : step === 'pending' ? (
       <StatusBadge label="Check your email" tone="warning" />
@@ -385,6 +391,19 @@ export function AccountProtection({ userId }: { userId: string }) {
           <Text style={styles.hint}>
             This email and password belong to this same account, so your couple and data stay connected to it. On a new
             or reinstalled phone, choose &quot;Continue with email&quot; on Bond&apos;s welcome screen and sign in.
+          </Text>
+        </>
+      ) : null}
+
+      {step === 'google' ? (
+        <>
+          <Text style={styles.body}>
+            Signed in with Google: <Text style={styles.strong}>{linkedEmail}</Text>
+          </Text>
+          <Text style={styles.hint}>
+            Your Google account protects this Bond account, so no Bond password is needed. On a new or reinstalled
+            phone, choose &quot;Continue with Google&quot; on Bond&apos;s welcome screen. For sensitive actions, like deleting
+            your account, Bond asks you to confirm with Google again.
           </Text>
         </>
       ) : null}

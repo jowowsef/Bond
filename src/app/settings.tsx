@@ -466,6 +466,8 @@ export default function Settings() {
                 if (v && !(await confirmSharing('screen_time', partnerName))) return;
                 if (!v && !(await confirmStopSharing('screen_time', partnerName))) return;
                 await setVisibility('share_screen_time', v);
+                // Start / stop the screen time part of the background service to match.
+                if (phase === 'paired' && pairingSetup === 'done') await reconcileBackgroundService(userId, partnerName).catch(() => null);
               })()
             }
             last

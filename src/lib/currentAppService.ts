@@ -20,7 +20,9 @@ import { checkSyncAllowed } from './syncGate';
  * every rule again:
  *  - always: signed in, paired with both members, setup finished;
  *  - an app report: Currently Using sharing on + Usage access;
- *  - a battery report: battery sharing on.
+ *  - a battery report: battery sharing on;
+ *  - a screen time report: screen time sharing on + Usage access (checked in
+ *    syncScreenTime).
  * If a rule is definitely no longer true, only the affected part stops
  * (turning off Currently Using doesn't stop battery, and the other way
  * round); when nothing is left, the service stops with its notification. If
@@ -30,8 +32,8 @@ import { checkSyncAllowed } from './syncGate';
  * Every decision is written to the local diagnostics log (never uploaded),
  * so a detection problem can be told apart from an upload problem.
  *
- * While the service runs it also sends screen time (at most every 15
- * minutes, only if that sharing is on) and picks up partner alerts.
+ * The service asks for screen time itself (its own part, about every 15
+ * minutes while the screen is on). It also picks up partner alerts.
  *
  * Must be defined at startup (imported from lib/backgroundJobs.ts, which the
  * app entry imports), because the service may start Bond's JavaScript
@@ -47,8 +49,6 @@ import { checkSyncAllowed } from './syncGate';
 const GATE_REUSE_MS = 60_000;
 let lastAllowed: { userId: string; at: number } | null = null;
 
-const SCREEN_TIME_EVERY_MS = 15 * 60_000;
-let lastScreenTime = 0;
 let lastAlertCheck = 0;
 
 let cachedGeneration = currentAppGeneration();
@@ -60,7 +60,6 @@ async function allowedUserId(): Promise<Gate> {
   if (cachedGeneration !== currentAppGeneration()) {
     cachedGeneration = currentAppGeneration();
     lastAllowed = null;
-    lastScreenTime = 0;
   }
   if (lastAllowed && Date.now() - lastAllowed.at < GATE_REUSE_MS) return { userId: lastAllowed.userId };
   const verdict = await checkSyncAllowed();
@@ -73,15 +72,19 @@ async function allowedUserId(): Promise<Gate> {
 }
 
 /** Stop only one part of the service (the other keeps running if it is on). */
-async function dropPart(part: 'apps' | 'battery', why: string): Promise<void> {
+async function dropPart(part: 'apps' | 'battery' | 'screenTime', why: string): Promise<void> {
   const now = serviceModes();
-  const next = { apps: part === 'apps' ? false : now.apps, battery: part === 'battery' ? false : now.battery };
+  const next = {
+    apps: part === 'apps' ? false : now.apps,
+    battery: part === 'battery' ? false : now.battery,
+    screenTime: part === 'screenTime' ? false : now.screenTime,
+  };
   logDiagnostic(`${part} stopped: ${why}`);
   if (!(await updateServiceModes(next))) await stopCurrentAppService();
 }
 
 export type NativeReport = {
-  kind?: 'app' | 'battery';
+  kind?: 'app' | 'battery' | 'screen_time';
   packageName?: string | null;
   appName?: string | null;
   level?: number;
@@ -123,6 +126,16 @@ export async function handleReport(report: NativeReport): Promise<TaskResult> {
     }
     const userId = gate.userId;
 
+    if (kind === 'screen_time') {
+      const st = await syncScreenTime(userId).catch((e: unknown) => ({ status: 'error' as const, message: String((e as Error)?.message ?? e) }));
+      if (st.status === 'not-sharing' || st.status === 'no-access' || st.status === 'needs-update') {
+        await dropPart('screenTime', st.status === 'not-sharing' ? 'screen time sharing is off' : 'Usage access is off');
+        return { retry: false };
+      }
+      logDiagnostic(`screen time: ${st.status === 'synced' ? 'uploaded' : 'upload failed, will retry'}`);
+      return { retry: st.status === 'error' };
+    }
+
     if (kind === 'battery') {
       const r = await uploadBatteryReading(userId, report.level ?? 0, !!report.charging);
       if (r === 'not-sharing') {
@@ -148,14 +161,6 @@ export async function handleReport(report: NativeReport): Promise<TaskResult> {
       observedAt: typeof report.observedAt === 'number' ? report.observedAt : Date.now(),
     });
     logDiagnostic(`app ${report.packageName ?? 'none'}: ${result}`);
-
-    // Piggyback: screen time while the service keeps Bond running.
-    const now = Date.now();
-    if (now - lastScreenTime >= SCREEN_TIME_EVERY_MS) {
-      lastScreenTime = now;
-      const st = await syncScreenTime(userId).catch(() => ({ status: 'error' as const }));
-      if (st.status === 'error') lastScreenTime = 0;
-    }
 
     return { retry: result === 'failed' };
   } catch (e) {

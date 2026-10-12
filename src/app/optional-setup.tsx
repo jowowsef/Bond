@@ -18,7 +18,6 @@ import { askConfirm, confirmSharing } from '@/lib/consent';
 import { offerBackgroundLocation } from '@/lib/locationPermissionFlow';
 import { getUsageSupport, hasUsageAccess } from '@/lib/screenTime';
 import { requestUsageAccess } from '@/lib/usageAccessFlow';
-import { getWebSupport, readWebStatus } from '@/lib/webProtection';
 import { getNotificationState, openAppSettings, requestNotifications } from '@/lib/setupPermissions';
 import { supabase } from '@/lib/supabase';
 import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
@@ -59,7 +58,6 @@ export default function OptionalSetup() {
   const [location, setLocation] = useState<ItemState>('not_set_up');
   const [notifications, setNotifications] = useState<ItemState>('not_set_up');
   const [screenTime, setScreenTime] = useState<ItemState>('not_set_up');
-  const [web, setWeb] = useState<ItemState>('not_set_up');
   const [screenShare, setScreenShare] = useState<ItemState>('not_set_up');
   const [finishing, setFinishing] = useState(false);
   // New pairing: sharing must be reset (all off) on the server before anything
@@ -76,9 +74,6 @@ export default function OptionalSetup() {
     const support = getUsageSupport();
     setScreenTime(support !== 'ready' ? 'unavailable' : hasUsageAccess() ? 'enabled' : 'permission_required');
 
-    // Web Protection: real state from Android (set up from Web Protection on Home).
-    const webStatus = getWebSupport() === 'ready' ? readWebStatus() : null;
-    setWeb(!webStatus ? 'unavailable' : webStatus.running ? 'enabled' : webStatus.enabled ? 'limited' : 'not_set_up');
 
     // Background updates: separate from reading the battery (which needs nothing).
     const [optimized, available] = await Promise.all([isBatteryOptimizedForBond(), backgroundJobsAvailable()]);
@@ -169,6 +164,8 @@ export default function OptionalSetup() {
     if (!(await confirmSharing(kind, partnerName))) return; // Cancel: stays off
     setBusy(kind);
     const { error } = await supabase.from('privacy_settings').update({ share_screen_time: true }).eq('user_id', userId);
+    // Screen time updates come from the background service (setup is finished here).
+    if (!error) await reconcileBackgroundService(userId, partnerName).catch(() => null);
     setBusy(null);
     if (error) Alert.alert('Not saved', 'Could not turn this on. Check your connection and try again.');
     await refreshStates();
@@ -330,18 +327,6 @@ export default function OptionalSetup() {
             ? { label: 'Turn off', onPress: () => currentApp.toggle(false) }
             : undefined
         }
-      />
-      <Item
-        icon="shield-checkmark-outline"
-        title="Web Protection"
-        desc={
-          web === 'unavailable'
-            ? 'Block adult websites on this phone. This copy of Bond is too old for it; install the newest version.'
-            : web === 'limited'
-              ? 'Set to on, but paused: websites are not being filtered. Open Web Protection on Home to turn it back on.'
-              : 'Block adult websites on this phone with an on-phone filter. Set it up from Web Protection on Home.'
-        }
-        state={web}
       />
     </>
   );

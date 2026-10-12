@@ -10,8 +10,7 @@ import { Linking, Platform } from 'react-native';
  * was granted: we ask Android, then report back the real state. When Android
  * requires the user to visit a system Settings page, we open it.
  *
- * Usage access (Screen Time) and Web Protection live in screenTime.ts and
- * webProtection.ts, next to their native modules.
+ * Usage access (Screen Time) lives in screenTime.ts, next to its native module.
  */
 
 export type PermissionState = 'granted' | 'denied' | 'undetermined' | 'unavailable';

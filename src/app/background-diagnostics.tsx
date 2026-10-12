@@ -23,7 +23,7 @@ import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/
  * after switching apps means Android didn't report the switch.
  */
 type Snapshot = {
-  modes: { running: boolean; apps: boolean; battery: boolean };
+  modes: { running: boolean; apps: boolean; battery: boolean; screenTime: boolean };
   usage: string;
   batteryOptimized: boolean | null;
   notifications: string;
@@ -77,6 +77,7 @@ export default function BackgroundDiagnostics() {
         ['Service', m!.running ? 'running' : 'stopped'],
         ['App checks (Currently Using)', m!.apps ? 'on' : 'off'],
         ['Battery updates', m!.battery ? 'on' : 'off'],
+        ['Screen time updates', m!.screenTime ? 'on' : 'off'],
         ['Usage access', snap.usage],
         ['Battery optimization', snap.batteryOptimized === null ? 'unknown' : snap.batteryOptimized ? 'ON (Android may pause Bond)' : 'off (unrestricted)'],
         ['Notifications', snap.notifications],

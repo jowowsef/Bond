@@ -73,7 +73,6 @@ export default function RootLayout() {
               <Stack.Screen name="show-code" options={{ presentation: 'card' }} />
               <Stack.Screen name="enter-code" options={{ presentation: 'card' }} />
               <Stack.Screen name="settings" options={{ presentation: 'card' }} />
-              <Stack.Screen name="controls" options={{ presentation: 'card' }} />
               <Stack.Screen name="calendar-event" options={{ presentation: 'card' }} />
               <Stack.Screen name="calendar-edit" options={{ presentation: 'card' }} />
               <Stack.Screen name="activity" options={{ presentation: 'card' }} />

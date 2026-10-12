@@ -14,7 +14,6 @@ import { deliverPendingAlerts } from './partnerAlerts';
 import { syncScreenTime } from './screenTime';
 import { supabase } from './supabase';
 import { checkSyncAllowed } from './syncGate';
-import { readWebStatus, shareWebStatus } from './webProtection';
 
 /**
  * BACKGROUND UPDATES (Android WorkManager, via expo-background-task)
@@ -27,9 +26,8 @@ import { readWebStatus, shareWebStatus } from './webProtection';
  * - Stops completely if someone uses "Force stop" on Bond, until Bond is
  *   opened again. It does resume after a restart of the phone.
  *
- * SEPARATE jobs, so battery, screen time, partner alerts and Web Protection
- * status never share data, checks or
- * privacy switches. Each job checks its own setting before doing anything.
+ * SEPARATE jobs, so battery, screen time, Currently Using and partner alerts
+ * never share data, checks or privacy switches. Each job checks its own setting before doing anything.
  *
  * Android runs all of them inside ONE scheduled worker, and schedules the
  * next run only after every job has reported back. A job that hangs (for
@@ -51,7 +49,8 @@ import { readWebStatus, shareWebStatus } from './webProtection';
 export const BATTERY_TASK = 'bond-battery-sync';
 export const SCREEN_TIME_TASK = 'bond-screen-time-sync';
 export const PARTNER_ALERTS_TASK = 'bond-partner-alerts';
-export const WEB_STATUS_TASK = 'bond-web-status-sync';
+/** Removed feature (Web Protection): its old job is unregistered on start. */
+const RETIRED_TASKS = ['bond-web-status-sync'];
 export const CURRENT_APP_TASK = 'bond-current-app-sync';
 const INTERVAL_MINUTES = 15; // Android's minimum
 /** Each job finishes (or gives up) well within Android's worker limit. */
@@ -123,22 +122,20 @@ defineJob(PARTNER_ALERTS_TASK, async () => {
   return Success;
 });
 
-// Keep the partner's view of "Web Protection on/off" honest even if it was
-// switched off in Android settings while Bond was closed. Only on/off is sent.
-defineJob(WEB_STATUS_TASK, async () => {
-  const userId = await signedInUserId();
-  if (userId) await shareWebStatus(userId, readWebStatus());
-  return Success;
-});
-
 /** Ask Android to run all jobs periodically. Safe to call on every app start. */
 export async function registerBackgroundJobs(): Promise<void> {
   try {
     const status = await BackgroundTask.getStatusAsync();
     if (status !== BackgroundTask.BackgroundTaskStatus.Available) return;
-    for (const name of [BATTERY_TASK, SCREEN_TIME_TASK, CURRENT_APP_TASK, PARTNER_ALERTS_TASK, WEB_STATUS_TASK]) {
+    for (const name of [BATTERY_TASK, SCREEN_TIME_TASK, CURRENT_APP_TASK, PARTNER_ALERTS_TASK]) {
       if (!(await TaskManager.isTaskRegisteredAsync(name))) {
         await BackgroundTask.registerTaskAsync(name, { minimumInterval: INTERVAL_MINUTES });
+      }
+    }
+    // Phones updated from an older Bond: stop jobs of removed features.
+    for (const name of RETIRED_TASKS) {
+      if (await TaskManager.isTaskRegisteredAsync(name)) {
+        await BackgroundTask.unregisterTaskAsync(name).catch(() => undefined);
       }
     }
   } catch {

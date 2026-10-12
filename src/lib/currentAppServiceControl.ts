@@ -2,14 +2,15 @@ import BondUsage from '../../modules/bond-usage';
 
 /**
  * Start / stop Bond's ONE background foreground service (see modules/bond-usage
- * CurrentAppService). It has two parts: app checks for Currently Using and
- * battery changes for battery sharing; it runs while either is on. Kept free
+ * CurrentAppService). It has three parts: app checks for Currently Using,
+ * battery changes for battery sharing, and a screen time summary about every
+ * 15 minutes for screen time sharing; it runs while any of them is on. Kept free
  * of other imports so any file can stop it without import cycles. The rules
  * for WHEN it may run live in src/lib/backgroundService.ts (in the app) and
  * src/lib/currentAppService.ts (in the background task).
  */
 
-export type ServiceModes = { apps: boolean; battery: boolean };
+export type ServiceModes = { apps: boolean; battery: boolean; screenTime: boolean };
 
 export const CURRENT_APP_TASK = 'bond-current-app-watch';
 
@@ -48,12 +49,12 @@ export function isCurrentAppServiceRunning(): boolean {
 export function serviceModes(): ServiceModes & { running: boolean } {
   try {
     const m = BondUsage?.getBackgroundServiceModes?.();
-    if (m) return m;
+    if (m) return { running: m.running, apps: m.apps, battery: m.battery, screenTime: !!m.screenTime };
   } catch {
     // older build
   }
   const running = isCurrentAppServiceRunning();
-  return { running, apps: running, battery: false };
+  return { running, apps: running, battery: false, screenTime: false };
 }
 
 /**
@@ -62,12 +63,12 @@ export function serviceModes(): ServiceModes & { running: boolean } {
  * stopped. Returns false if the service isn't running.
  */
 export async function updateServiceModes(modes: ServiceModes): Promise<boolean> {
-  if (!modes.apps && !modes.battery) {
+  if (!modes.apps && !modes.battery && !modes.screenTime) {
     await stopCurrentAppService();
     return true;
   }
   try {
-    return BondUsage?.updateBackgroundServiceModes?.(modes.apps, modes.battery) ?? false;
+    return BondUsage?.updateBackgroundServiceModes?.(modes.apps, modes.battery, modes.screenTime) ?? false;
   } catch {
     return false;
   }
@@ -88,10 +89,10 @@ export function logDiagnostic(message: string): void {
  */
 export async function startCurrentAppService(
   _partnerName: string,
-  modes: ServiceModes = { apps: true, battery: false },
+  modes: ServiceModes = { apps: true, battery: false, screenTime: false },
 ): Promise<boolean> {
   if (!currentAppServiceAvailable()) return false;
-  if (!modes.apps && !modes.battery) {
+  if (!modes.apps && !modes.battery && !modes.screenTime) {
     await stopCurrentAppService();
     return false;
   }
@@ -105,6 +106,7 @@ export async function startCurrentAppService(
       heartbeatMs: HEARTBEAT_MS,
       watchApps: modes.apps,
       watchBattery: modes.battery,
+      watchScreenTime: modes.screenTime,
     });
     return true;
   } catch {

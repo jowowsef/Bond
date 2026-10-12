@@ -34,6 +34,33 @@ export const supabase = createClient(
   },
 );
 
+/**
+ * A separate, throw-away Supabase client that keeps its session ONLY in memory
+ * (never saved, never refreshed, never shared with the app's client). Used to
+ * let Supabase verify a fresh Google sign-in for re-authentication without
+ * touching the session the app is using. Sign it out when done.
+ */
+export function createVerificationClient() {
+  const memory = new Map<string, string>();
+  return createClient(
+    isSupabaseConfigured ? supabaseUrl : 'https://not-configured.supabase.co',
+    isSupabaseConfigured ? supabaseAnonKey : 'not-configured',
+    {
+      auth: {
+        storageKey: 'bond-reauth-check',
+        storage: {
+          getItem: async (k: string) => memory.get(k) ?? null,
+          setItem: async (k: string, v: string) => void memory.set(k, v),
+          removeItem: async (k: string) => void memory.delete(k),
+        },
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
+    },
+  );
+}
+
 // Only refresh the login token while the app is open (saves battery).
 AppState.addEventListener('change', (state) => {
   if (state === 'active') supabase.auth.startAutoRefresh();

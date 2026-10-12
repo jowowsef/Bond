@@ -34,7 +34,7 @@ const ON_TEXT: Record<ShareKind, (name: string) => Explain> = {
     points: [
       'Needs Android\'s "Usage access" for Bond.',
       'Bond never sees what you do inside apps.',
-      'Sent when Bond can run; it shows when it was last synced.',
+      'Sent in the background about every 15 minutes while your screen is on, with the quiet "Background activity is running" notification. It shows when it was last synced.',
     ],
     icon: 'time-outline',
   }),

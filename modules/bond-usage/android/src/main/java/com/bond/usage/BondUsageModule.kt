@@ -59,18 +59,19 @@ class BondUsageModule : Module() {
     /** Is the service running right now (in this process)? */
     Function("isCurrentAppServiceRunning") { CurrentAppService.running }
 
-    /** Which parts of the running service are on: { apps, battery }. */
+    /** Which parts of the running service are on: { apps, battery, screenTime }. */
     Function("getBackgroundServiceModes") {
-      val (apps, battery) = CurrentAppService.modes()
-      mapOf("running" to CurrentAppService.running, "apps" to apps, "battery" to battery)
+      val (apps, battery, screenTime) = CurrentAppService.modes()
+      mapOf("running" to CurrentAppService.running, "apps" to apps, "battery" to battery, "screenTime" to screenTime)
     }
 
     /**
-     * Turn the app checks / battery part of the RUNNING service on or off
-     * (works from the background; never starts the service). False = not running.
+     * Turn the app checks / battery / screen time parts of the RUNNING service
+     * on or off (works from the background; never starts the service).
+     * False = not running.
      */
-    Function("updateBackgroundServiceModes") { apps: Boolean, battery: Boolean ->
-      CurrentAppService.updateModes(apps, battery)
+    Function("updateBackgroundServiceModes") { apps: Boolean, battery: Boolean, screenTime: Boolean ->
+      CurrentAppService.updateModes(apps, battery, screenTime)
     }
 
     /** The local diagnostics log (last 80 lines), newest last. */

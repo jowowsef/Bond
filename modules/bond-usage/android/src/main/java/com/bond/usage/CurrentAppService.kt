@@ -51,6 +51,8 @@ class CurrentAppService : Service() {
   private var heartbeatMs = DEFAULT_HEARTBEAT_MS
   private var watchApps = false
   private var watchBattery = false
+  private var watchScreenTime = false
+  private var screenTimeFailures = 0
 
   // Currently Using state
   private var lastKey: String? = null
@@ -82,6 +84,31 @@ class CurrentAppService : Service() {
       handler?.postDelayed(this, BATTERY_REFRESH_MS)
     }
   }
+  /**
+   * Screen time: ask JavaScript to send today's summary about every 15
+   * minutes. Skipped while the screen is off (usage can't grow then), so the
+   * phone is not woken up for it.
+   */
+  private val screenTimeTick = object : Runnable {
+    override fun run() {
+      if (!watchScreenTime) return
+      handler?.removeCallbacks(this)
+      if (!isScreenOn()) {
+        handler?.postDelayed(this, SCREEN_TIME_MS)
+        return
+      }
+      report(Bundle().apply { putString("kind", "screen_time"); putString("reason", "refresh") }) { retry ->
+        if (!watchScreenTime) return@report
+        screenTimeFailures = if (retry) screenTimeFailures + 1 else 0
+        val next = if (retry) RetryPolicy.delayMs(SCREEN_TIME_RETRY_BASE_MS, screenTimeFailures, SCREEN_TIME_MS) else SCREEN_TIME_MS
+        handler?.removeCallbacks(this)
+        handler?.postDelayed(this, next)
+      }
+    }
+  }
+
+  private fun isScreenOn(): Boolean =
+    (getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager)?.isInteractive ?: true
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -94,6 +121,7 @@ class CurrentAppService : Service() {
       .coerceIn(MIN_HEARTBEAT_MS, MAX_HEARTBEAT_MS)
     val apps = intent?.getBooleanExtra(EXTRA_WATCH_APPS, true) ?: true
     val battery = intent?.getBooleanExtra(EXTRA_WATCH_BATTERY, false) ?: false
+    val screenTime = intent?.getBooleanExtra(EXTRA_WATCH_SCREEN_TIME, false) ?: false
 
     // Must become a foreground service right away (Android rule).
     try {
@@ -117,7 +145,7 @@ class CurrentAppService : Service() {
     }
     instance = this
     running = true
-    handler?.post { applyModes(apps, battery) }
+    handler?.post { applyModes(apps, battery, screenTime) }
     // Not restarted by Android after it kills Bond: it starts again when Bond
     // is opened, and the JavaScript side checks every rule again first.
     return START_NOT_STICKY
@@ -137,16 +165,17 @@ class CurrentAppService : Service() {
     detector = null
     watchApps = false
     watchBattery = false
+    watchScreenTime = false
     BackgroundDiagnostics.log(applicationContext, "service: stopped")
     super.onDestroy()
   }
 
   /** Turn each part on or off (on the service thread). Nothing left on = stop. */
-  private fun applyModes(apps: Boolean, battery: Boolean) {
-    if (apps != watchApps || battery != watchBattery) {
-      BackgroundDiagnostics.log(applicationContext, "service: modes apps=$apps battery=$battery")
+  private fun applyModes(apps: Boolean, battery: Boolean, screenTime: Boolean) {
+    if (apps != watchApps || battery != watchBattery || screenTime != watchScreenTime) {
+      BackgroundDiagnostics.log(applicationContext, "service: modes apps=$apps battery=$battery screenTime=$screenTime")
     }
-    if (!apps && !battery) {
+    if (!apps && !battery && !screenTime) {
       stopSelf()
       return
     }
@@ -175,6 +204,16 @@ class CurrentAppService : Service() {
       handler?.removeCallbacks(batteryRefresh)
       handler?.removeCallbacks(batteryRetry)
     }
+
+    if (screenTime && !watchScreenTime) {
+      watchScreenTime = true
+      screenTimeFailures = 0
+      handler?.removeCallbacks(screenTimeTick)
+      handler?.postDelayed(screenTimeTick, SCREEN_TIME_FIRST_MS) // one soon after starting
+    } else if (!screenTime && watchScreenTime) {
+      watchScreenTime = false
+      handler?.removeCallbacks(screenTimeTick)
+    }
   }
 
   // ---------------- Currently Using ----------------
@@ -187,7 +226,7 @@ class CurrentAppService : Service() {
       // (if on) keeps running.
       BackgroundDiagnostics.log(ctx, "apps: Usage access is off; stopping app checks")
       report(Bundle().apply { putString("kind", "app"); putString("reason", REASON_NO_ACCESS) }) { }
-      applyModes(false, watchBattery)
+      applyModes(false, watchBattery, watchScreenTime)
       return
     }
     val power = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -348,6 +387,7 @@ class CurrentAppService : Service() {
 
   private fun describe(data: Bundle): String = when (data.getString("kind")) {
     "battery" -> "battery ${data.getInt("level")}%${if (data.getBoolean("charging")) " charging" else ""} (${data.getString("reason")})"
+    "screen_time" -> "screen time (${data.getString("reason")})"
     else -> "app ${data.getString("packageName") ?: "none"} (${data.getString("reason")})"
   }
 
@@ -418,6 +458,7 @@ class CurrentAppService : Service() {
     const val EXTRA_HEARTBEAT = "heartbeatMs"
     const val EXTRA_WATCH_APPS = "watchApps"
     const val EXTRA_WATCH_BATTERY = "watchBattery"
+    const val EXTRA_WATCH_SCREEN_TIME = "watchScreenTime"
     private const val CHANNEL_ID = "bond-current-app-quiet"
     private const val OLD_CHANNEL_ID = "bond-current-app"
     private const val NOTIFICATION_ID = 42017
@@ -437,6 +478,10 @@ class CurrentAppService : Service() {
     /** Battery: send at least this often while sharing, even without a change. */
     private const val BATTERY_REFRESH_MS = 15 * 60_000L
     private const val BATTERY_RETRY_BASE_MS = 30_000L
+    /** Screen time: about every 15 minutes while the screen is on. */
+    private const val SCREEN_TIME_MS = 15 * 60_000L
+    private const val SCREEN_TIME_FIRST_MS = 5_000L
+    private const val SCREEN_TIME_RETRY_BASE_MS = 60_000L
 
     @Volatile
     var running = false
@@ -446,17 +491,18 @@ class CurrentAppService : Service() {
     private var instance: CurrentAppService? = null
 
     /** Which parts are on right now (for the diagnostics screen). */
-    fun modes(): Pair<Boolean, Boolean> = instance?.let { it.watchApps to it.watchBattery } ?: (false to false)
+    fun modes(): Triple<Boolean, Boolean, Boolean> =
+      instance?.let { Triple(it.watchApps, it.watchBattery, it.watchScreenTime) } ?: Triple(false, false, false)
 
     /**
      * Change which parts run, without starting the service again (allowed
      * from the background, unlike starting a foreground service). Returns
      * false when the service isn't running.
      */
-    fun updateModes(apps: Boolean, battery: Boolean): Boolean {
+    fun updateModes(apps: Boolean, battery: Boolean, screenTime: Boolean): Boolean {
       val svc = instance ?: return false
       val h = svc.handler ?: return false
-      h.post { svc.applyModes(apps, battery) }
+      h.post { svc.applyModes(apps, battery, screenTime) }
       return true
     }
   }

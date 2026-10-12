@@ -96,10 +96,17 @@ export function useBatterySync(userId: string | null): void {
 export function usePartnerBattery(partnerId: string | null): {
   battery: BatteryStatus | null;
   stale: boolean;
+  /**
+   * Whether the partner has battery sharing ON (null = not known yet). With
+   * sharing on but no reading yet, the partner's phone hasn't sent one (for
+   * example right after pairing): "waiting", not "not shared".
+   */
+  sharing: boolean | null;
   /** Re-read now (pull to refresh). Rejects on a network / database error. */
   reload: () => Promise<void>;
 } {
   const [battery, setBattery] = useState<BatteryStatus | null>(null);
+  const [sharing, setSharing] = useState<boolean | null>(null);
   const [now, setNow] = useState(Date.now());
   const partnerRef = useRef(partnerId);
   partnerRef.current = partnerId;
@@ -115,22 +122,29 @@ export function usePartnerBattery(partnerId: string | null): {
     const id = partnerRef.current;
     if (!id) return;
     const mine = ++seq.current;
-    const { data, error } = await supabase.from('battery_status').select('*').eq('user_id', id).maybeSingle();
+    const [row, privacy] = await Promise.all([
+      supabase.from('battery_status').select('*').eq('user_id', id).maybeSingle(),
+      supabase.from('privacy_settings').select('share_battery').eq('user_id', id).maybeSingle(),
+    ]);
     if (mine !== seq.current || partnerRef.current !== id) return;
-    if (error) throw error;
-    setBattery((data as BatteryStatus) ?? null);
+    if (row.error) throw row.error;
+    setBattery((row.data as BatteryStatus) ?? null);
+    if (!privacy.error) setSharing(!!(privacy.data as { share_battery?: boolean } | null)?.share_battery);
     setNow(Date.now());
   }, []);
 
   useEffect(() => {
     seq.current++;
     setBattery(null);
+    setSharing(null);
     if (!partnerId) return;
     const run = () => void reload().catch(() => {});
     run();
     const channel = supabase
       .channel(uniqueTopic(`battery-watch-${partnerId}`))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'battery_status', filter: `user_id=eq.${partnerId}` }, run)
+      // The partner turning battery sharing on / off.
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'privacy_settings', filter: `user_id=eq.${partnerId}` }, run)
       .subscribe();
     const appSub = AppState.addEventListener('change', (st) => {
       if (st === 'active') run();
@@ -147,5 +161,5 @@ export function usePartnerBattery(partnerId: string | null): {
   }, []);
 
   const stale = !!battery && now - new Date(battery.updated_at).getTime() > BATTERY_STALE_MS;
-  return { battery, stale, reload };
+  return { battery, stale, sharing, reload };
 }
