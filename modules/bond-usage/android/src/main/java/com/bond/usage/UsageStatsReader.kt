@@ -23,9 +23,7 @@ import java.util.Calendar
  * pre-made daily buckets because they are known to overlap days and double
  * count.
  *
- * Same logic as modules/bond-native UsageStatsHelper, kept here as a small,
- * separate module so Screen Time can ship without the (not yet built) VPN and
- * Accessibility code that lives in bond-native.
+ * Kept as a small, separate module so Screen Time ships on its own.
  */
 object UsageStatsReader {
 

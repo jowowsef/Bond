@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AUTH_BUTTON_ICON, AUTH_LIGHT_FG, AuthButton } from '@/components/AuthButton';
 import { BondLogo } from '@/components/BondLogo';
 import { continueWithGoogle, getGoogleSupport } from '@/lib/googleAuth';
+import { openLegalPage } from '@/lib/legalLinks';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { colors, font, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
@@ -128,11 +129,11 @@ export default function Welcome() {
           </Pressable>
           <Text style={styles.agreeText} onPress={() => setAgreed((v) => !v)}>
             I am 18 or older and agree to the{' '}
-            <Text style={styles.legalLink} onPress={() => router.push('/terms')} accessibilityRole="link">
+            <Text style={styles.legalLink} onPress={() => void openLegalPage('terms')} accessibilityRole="link">
               Terms of Use
             </Text>{' '}
             and{' '}
-            <Text style={styles.legalLink} onPress={() => router.push('/privacy')} accessibilityRole="link">
+            <Text style={styles.legalLink} onPress={() => void openLegalPage('privacy')} accessibilityRole="link">
               Privacy Policy
             </Text>
             .

@@ -8,6 +8,7 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { isValidEmail, MIN_PASSWORD_LENGTH } from '@/lib/accountProtection';
 import { signInAllowed, signInWithEmail, signUpWithEmail } from '@/lib/emailLogin';
+import { openLegalPage } from '@/lib/legalLinks';
 import { colors, font, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
@@ -209,6 +210,15 @@ export default function ContinueWithEmail() {
               </Pressable>
             </>
           )}
+          <Text style={styles.legal}>
+            <Text style={styles.legalLink} onPress={() => void openLegalPage('privacy')} accessibilityRole="link">
+              Privacy Policy
+            </Text>
+            {'  ·  '}
+            <Text style={styles.legalLink} onPress={() => void openLegalPage('terms')} accessibilityRole="link">
+              Terms of Use
+            </Text>
+          </Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -230,4 +240,6 @@ const styles = themedStyles(() => ({
   linkWrap: { alignSelf: 'center', marginTop: spacing.lg, minHeight: 32, justifyContent: 'center' },
   link: { ...font.small, fontWeight: '700', color: colors.primary },
   switchText: { ...font.small, color: colors.subtext, textAlign: 'center' },
+  legal: { ...font.small, color: colors.muted, textAlign: 'center', marginTop: spacing.xl, lineHeight: 22 },
+  legalLink: { color: colors.subtext, textDecorationLine: 'underline' },
 }));

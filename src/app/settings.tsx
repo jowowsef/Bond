@@ -24,6 +24,7 @@ import { currentAppStatusText, useCurrentAppSharing, type CurrentAppStatus } fro
 import { useLocationSharingSwitch } from '@/hooks/useLocationSharingSwitch';
 import { askConfirm, confirmSharing, confirmStopSharing } from '@/lib/consent';
 import { possessive } from '@/lib/format';
+import { openLegalPage } from '@/lib/legalLinks';
 import { updateDisplayName } from '@/lib/pairing';
 import { removeAvatarPhoto, uploadAvatarPhoto } from '@/lib/profilePhoto';
 import { requestApproval } from '@/lib/requests';
@@ -544,10 +545,10 @@ export default function Settings() {
               <Row icon="pulse-outline" label="Background diagnostics (dev)" chevron />
             </Pressable>
           ) : null}
-          <Pressable onPress={() => router.push('/privacy')} accessibilityRole="button">
+          <Pressable onPress={() => void openLegalPage('privacy')} accessibilityRole="link">
             <Row icon="document-text-outline" label="Privacy Policy" chevron />
           </Pressable>
-          <Pressable onPress={() => router.push('/terms')} accessibilityRole="button">
+          <Pressable onPress={() => void openLegalPage('terms')} accessibilityRole="link">
             <Row icon="reader-outline" label="Terms of Use" chevron />
           </Pressable>
           <Pressable onPress={() => setDeleteOpen(true)} accessibilityRole="button">

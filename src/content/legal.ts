@@ -1,11 +1,12 @@
 /**
- * Bond's Privacy Policy and Terms of Use (shown in the app at /privacy and
- * /terms). One place to edit both.
+ * In-app summaries of Bond's Privacy Policy and Terms of Use (shown at
+ * /privacy and /terms when the official pages can't be opened). One place to
+ * edit both.
  *
- * BEFORE PUBLISHING: replace every [BRACKETED] placeholder below, and have a
- * lawyer review both documents (see notes/LAUNCH_CHECKLIST.md). These texts
- * describe what the code actually does as of the effective date; update them
- * whenever a feature changes what data Bond collects or shares.
+ * The OFFICIAL documents are docs/privacy-policy.html and docs/terms.html
+ * (Termly), published on GitHub Pages at the URLs below; Settings and the
+ * welcome screen open those. Keep these summaries consistent with them, and
+ * update both whenever a feature changes what data Bond collects or shares.
  */
 
 export const LEGAL = {
@@ -13,28 +14,39 @@ export const LEGAL = {
   contactEmail: 'bondsupport.app@gmail.com',
   address: 'Quezon City, Philippines',
   supabaseRegion: 'Singapore',
-  effectiveDate: 'October 11, 2026',
+  privacyPolicyDate: 'October 11, 2026',
+  termsDate: 'October 12, 2026',
+  privacyPolicyUrl: 'https://jowowsef.github.io/Bond/privacy-policy.html',
+  termsUrl: 'https://jowowsef.github.io/Bond/terms.html',
   minimumAge: 18,
 };
 
 export type LegalSection = { heading: string; body?: string[]; bullets?: string[] };
-export type LegalDoc = { title: string; intro: string; sections: LegalSection[] };
+export type LegalDoc = {
+  title: string;
+  /** The official full document (opened by the button at the top). */
+  page: 'privacy' | 'terms';
+  intro: string;
+  sections: LegalSection[];
+};
 
 const contact = `${LEGAL.operator}, ${LEGAL.contactEmail}, ${LEGAL.address}`;
 
 export const PRIVACY_POLICY: LegalDoc = {
   title: 'Privacy Policy',
+  page: 'privacy',
   intro:
-    `This policy explains what information Bond processes, why, who it is shared with, and the choices you have. ` +
+    `This is a summary of Bond's Privacy Policy. The full Privacy Policy is at ${LEGAL.privacyPolicyUrl}; ` +
+    `if this summary and the full policy differ, the full policy applies. ` +
     `Bond is a private app for two partners who choose to connect. Bond is operated by ${LEGAL.operator} ("we"). ` +
-    `Effective date: ${LEGAL.effectiveDate}.`,
+    `Last updated: ${LEGAL.privacyPolicyDate}.`,
   sections: [
     {
       heading: '1. The short version',
       bullets: [
         'Your partner only sees what you choose to share, and you can change each sharing switch in Settings.',
         'Bond has no ads, no analytics or tracking tools, and does not sell your information.',
-        'Location is collected only while location sharing is on and Bond is open, and only your latest position is kept.',
+        'Location is collected only while location sharing is on (while Bond is closed too, only if you choose "Allow all the time" in Android), and only your latest position is kept.',
         'You can delete your account in Settings at any time.',
       ],
     },
@@ -129,21 +141,26 @@ export const PRIVACY_POLICY: LegalDoc = {
     {
       heading: '11. Changes to this policy',
       body: [
-        'We will update the effective date and tell you in the app before significant changes take effect.',
+        'We will update the "Last updated" date at the top of the policy. If we make material changes, we may notify you by prominently posting a notice of the changes or by sending you a notification directly.',
       ],
     },
     {
       heading: '12. Contact',
-      body: [`Privacy questions and requests: ${contact}. Data protection officer: [DPO NAME AND CONTACT, if appointed].`],
+      body: [
+        `Privacy questions and requests: ${contact}. Data Protection Officer: ${LEGAL.operator}, ${LEGAL.contactEmail}.`,
+      ],
     },
   ],
 };
 
 export const TERMS_OF_USE: LegalDoc = {
   title: 'Terms of Use',
+  page: 'terms',
   intro:
-    `These terms are an agreement between you and ${LEGAL.operator} about using Bond. ` +
-    `By using Bond you accept them. Effective date: ${LEGAL.effectiveDate}.`,
+    `This is a summary of Bond's Terms of Use. The full Terms of Use are at ${LEGAL.termsUrl}; ` +
+    `if this summary and the full terms differ, the full terms apply. ` +
+    `The terms are an agreement between you and ${LEGAL.operator} about using Bond. ` +
+    `By using Bond you accept them. Last updated: ${LEGAL.termsDate}.`,
   sections: [
     {
       heading: '1. Who can use Bond',
@@ -154,8 +171,7 @@ export const TERMS_OF_USE: LegalDoc = {
     {
       heading: '2. Your account',
       bullets: [
-        'You are responsible for activity on your account and for keeping your phone and password secure.',
-        'An account that is not protected with an email and password exists only on your phone. If you uninstall Bond or lose the phone, it may not be recoverable.',
+        'You are responsible for activity on your account and for keeping your phone, password and Google account secure.',
         'Tell us if you think someone else has access to your account.',
       ],
     },
@@ -208,17 +224,22 @@ export const TERMS_OF_USE: LegalDoc = {
     {
       heading: '9. Disclaimers and liability',
       body: [
-        'Bond is provided "as is". To the extent the law allows, we do not give warranties beyond those you have under consumer law, and we are not liable for indirect losses or for the actions of your partner. Nothing in these terms limits rights you have under Philippine consumer protection law or other laws that cannot be excluded.',
-        '[LEGAL REVIEW: confirm the scope of these disclaimers and any liability cap.]',
+        'Bond is provided "as is" and "as available". To the extent the law allows, we do not give warranties beyond those you have under consumer law, and we are not liable for indirect losses or for the actions of your partner.',
+        'To the extent the law allows, our liability to you for any cause will be limited to $100.00 USD. Some laws do not allow certain limitations; where they apply, some of these limits may not apply to you.',
+        'Nothing in these Legal Terms limits any rights you have under applicable Philippine consumer protection law or other laws that cannot be excluded or limited by agreement.',
       ],
     },
     {
       heading: '10. Law and disputes',
-      body: ['[LEGAL REVIEW: governing law (for example, the Republic of the Philippines) and where disputes are handled.]'],
+      body: [
+        'These terms are governed by the laws of the Philippines, and disputes are resolved in the courts of the Philippines. The full Terms of Use explain this in detail.',
+      ],
     },
     {
       heading: '11. Changes to these terms',
-      body: ['We will update the effective date and tell you in the app before significant changes take effect.'],
+      body: [
+        'We will update the "Last updated" date at the top of the terms. If we make material changes, we will also notify users by email or through a notice in the app.',
+      ],
     },
     {
       heading: '12. Contact',
