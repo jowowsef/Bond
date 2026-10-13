@@ -104,7 +104,7 @@ export async function requestLiveMode(partnerName: string): Promise<void> {
         : 'If Android showed "Restricted setting", it blocks this for Bond until you allow it.',
       points: [
         'Open Bond\'s App info, tap ⋮ (top right), then "Allow restricted settings" and confirm.',
-        'Then open Accessibility again: Installed apps (or Downloaded apps) › Bond Live Currently Using › On.',
+        'Then open Accessibility again, find Bond in the list (under Installed apps or Downloaded apps) and turn it on.',
         'Currently Using keeps working without it, just less often.',
       ],
       confirmLabel: 'Open App info',
@@ -120,7 +120,7 @@ export async function requestLiveMode(partnerName: string): Promise<void> {
   if (status === 'closed') {
     const go = await askConfirm(
       'Live app detection was closed',
-      'Accessibility is still on for Bond, but your phone closed it. In Accessibility, turn Bond Live Currently Using off and on again.',
+      'Accessibility is still on for Bond, but your phone closed it. In Accessibility, find Bond in the list and turn it off and on again.',
       'Open settings',
       'Not now',
       false,
@@ -141,7 +141,7 @@ export async function requestLiveMode(partnerName: string): Promise<void> {
       ...(restricted
         ? ['First: open App info, tap ⋮ (top right), then "Allow restricted settings" and confirm. Android needs this because Bond was installed from a file.']
         : []),
-      'In Accessibility, find Bond (under Installed apps or Downloaded apps: "Bond Live Currently Using") and turn it on.',
+      'In Accessibility, find Bond in the list (under Installed apps or Downloaded apps) and turn it on.',
       'Android will ask to allow full control ("view and control screen" / "view and perform actions"). Tap Allow. That warning is expected: Android shows it for every app of this kind. Bond is set up so it can’t read your screen; it only learns the app’s name, and it never performs any actions.',
       'Then come back to Bond: the status changes to On. You can turn it off there anytime.',
     ],

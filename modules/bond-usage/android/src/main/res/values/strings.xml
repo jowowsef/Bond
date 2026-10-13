@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-  <string name="bond_live_label">Bond Live Currently Using</string>
+  <string name="bond_live_label">Bond</string>
   <string name="bond_live_summary">Shares the name of the app you open with your partner, right away.</string>
   <string name="bond_live_description">Optional. When this is on, Bond shows your partner the name of the app you open within a second or two (only while you share Currently Using in Bond). Bond only reads which app came to the front. It can\'t see what is on your screen, what you type, your messages, or anything inside apps. Turn it off here anytime; Currently Using then updates less often.</string>
 </resources>
