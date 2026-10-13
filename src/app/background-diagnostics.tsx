@@ -46,7 +46,7 @@ async function read(): Promise<Snapshot> {
   const live = readLiveStatus();
   const lastLive = liveLastChangeAt();
   const liveRows: [string, string][] = [
-    ['Live mode (Accessibility)', live === 'on' ? 'ON (live app switches)' : live === 'closed' ? 'on, but CLOSED by the phone' : live === 'off' ? 'off (usage log fallback)' : 'not in this build'],
+    ['Live app detection (Accessibility)', live === 'on' ? 'ON (live app switches)' : live === 'closed' ? 'on, but CLOSED by the phone' : live === 'off' ? 'off (usage log fallback)' : 'not in this build'],
     ['Live: last app switch', lastLive > 0 ? new Date(lastLive).toLocaleTimeString() : 'none yet'],
   ];
   let restrictions: [string, string][] = [];

@@ -98,14 +98,14 @@ export async function requestLiveMode(partnerName: string): Promise<void> {
     const { fromStore, sdkInt } = installInfo();
     const sideloaded = fromStore === false && (sdkInt ?? 0) >= 33;
     const choice = await askChoice({
-      title: 'Live mode is still off',
+      title: 'Accessibility is still off',
       body: sideloaded
         ? 'Bond was installed from a file, so Android may show Bond as a "Restricted setting" and not let you turn it on.'
         : 'If Android showed "Restricted setting", it blocks this for Bond until you allow it.',
       points: [
         'Open Bond\'s App info, tap ⋮ (top right), then "Allow restricted settings" and confirm.',
         'Then open Accessibility again: Installed apps (or Downloaded apps) › Bond Live Currently Using › On.',
-        'Currently Using keeps working without Live mode, just less often.',
+        'Currently Using keeps working without it, just less often.',
       ],
       confirmLabel: 'Open App info',
       secondaryLabel: 'Open Accessibility',
@@ -119,8 +119,8 @@ export async function requestLiveMode(partnerName: string): Promise<void> {
 
   if (status === 'closed') {
     const go = await askConfirm(
-      'Live mode was closed',
-      'Live mode is turned on, but your phone closed it. In Accessibility, turn Bond Live Currently Using off and on again.',
+      'Live app detection was closed',
+      'Accessibility is still on for Bond, but your phone closed it. In Accessibility, turn Bond Live Currently Using off and on again.',
       'Open settings',
       'Not now',
       false,
@@ -135,17 +135,17 @@ export async function requestLiveMode(partnerName: string): Promise<void> {
   const { fromStore, sdkInt } = installInfo();
   const restricted = fromStore !== true && (sdkInt ?? 0) >= 33;
   const choice = await askChoice({
-    title: 'Turn on Live mode',
-    body: `${partnerName} will see the app you open within a second or two. Bond only learns the name of the app that came to the front.`,
+    title: 'Turn on Accessibility',
+    body: `So ${partnerName} sees the app you switch to right away. Bond only learns the name of the app that came to the front.`,
     points: [
       ...(restricted
         ? ['First: open App info, tap ⋮ (top right), then "Allow restricted settings" and confirm. Android needs this because Bond was installed from a file.']
         : []),
-      'In Accessibility, tap Installed apps (or Downloaded apps) › Bond Live Currently Using › On.',
-      'Android will warn that the app can "view and control" your screen or "view and perform actions". That warning is expected: Android shows it for every app of this kind. Bond is set up so it can’t read your screen; it only learns the app’s name, and it never performs any actions.',
-      'You can turn it off there anytime.',
+      'In Accessibility, find Bond (under Installed apps or Downloaded apps: "Bond Live Currently Using") and turn it on.',
+      'Android will ask to allow full control ("view and control screen" / "view and perform actions"). Tap Allow. That warning is expected: Android shows it for every app of this kind. Bond is set up so it can’t read your screen; it only learns the app’s name, and it never performs any actions.',
+      'Then come back to Bond: the status changes to On. You can turn it off there anytime.',
     ],
-    confirmLabel: 'Open Accessibility',
+    confirmLabel: 'Open Accessibility settings',
     secondaryLabel: restricted ? 'Open App info first' : undefined,
     cancelLabel: 'Not now',
     icon: 'phone-portrait-outline',

@@ -237,6 +237,7 @@ export default function SharingSetup() {
   // ---------------- Overview ----------------
   if (step === 'overview') {
     const firstOpen = FEATURE_STEPS.find((s) => !done[s]);
+    const liveOn = live.status === 'on';
     return (
       <SafeAreaView style={styles.screen}>
         <ScrollView contentContainerStyle={styles.overview} showsVerticalScrollIndicator={false}>
@@ -272,6 +273,30 @@ export default function SharingSetup() {
                 </Pressable>
               );
             })}
+            {/* Optional extra for Currently Using (opens that step, part 2). */}
+            {live.status !== 'unavailable' ? (
+              <Pressable
+                onPress={() => void go('current_app')}
+                accessibilityRole="button"
+                accessibilityLabel={`Live app detection, optional: ${liveOn ? 'on' : 'off'}`}
+                style={({ pressed }) => [styles.listRow, pressed && { opacity: 0.85 }]}
+              >
+                <View style={[styles.listIcon, styles.pinkSoft]}>
+                  <Ionicons name="flash-outline" size={19} color={colors.pink} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.listTitle}>Live app detection</Text>
+                  <Text style={styles.listDesc}>Optional · uses Accessibility</Text>
+                </View>
+                {liveOn ? (
+                  <Ionicons name="checkmark-circle" size={26} color={colors.primary} />
+                ) : (
+                  <View style={styles.allowPill}>
+                    <Text style={styles.allowText}>Optional</Text>
+                  </View>
+                )}
+              </Pressable>
+            ) : null}
           </View>
         </ScrollView>
         <View style={styles.bottom}>
@@ -425,16 +450,16 @@ export default function SharingSetup() {
     } else if (live.status === 'off' || live.status === 'closed') {
       // Part 2 (optional): Live mode, right after Currently Using is on.
       icon = 'flash';
-      title = 'Make it live (optional)';
+      title = 'Live app detection (optional)';
       body =
-        `With Live mode, ${partnerName} sees the app you open within a second or two, instead of minutes later on some phones. ` +
-        'Bond only learns which app came to the front, never what is on your screen, what you type, or anything inside apps.';
+        `To show ${partnerName} the app you switch to right away, Bond needs Android’s Accessibility access. Without it, Currently Using still works, but can be minutes late on some phones. ` +
+        'Bond only learns which app came to the front, never what is on your screen, what you type, or anything inside apps. This is optional.';
       tip =
         'Android will show a strong warning ("view and control screen" / "perform actions"). That is expected for every app of this kind: Bond only reads the app’s name, never your screen, and never acts for you.';
-      note = 'Live mode is optional. Turn it off anytime in Accessibility.';
-      action = { label: 'Turn on Live mode', onPress: () => void requestLiveMode(partnerName) };
+      note = 'Optional. Turn it off anytime in Accessibility.';
+      action = { label: 'Turn on Accessibility', onPress: () => void requestLiveMode(partnerName) };
     } else if (live.status === 'on') {
-      checks.push({ label: 'Live mode: on', ok: true, hint: `${partnerName} sees app switches within a second or two.` });
+      checks.push({ label: 'Live app detection: on', ok: true, hint: `${partnerName} sees app switches within a second or two.` });
     }
   }
 

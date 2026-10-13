@@ -397,19 +397,19 @@ export default function Settings() {
               onPress={() => void requestLiveMode(partnerName)}
               disabled={live.status === 'on'}
               accessibilityRole="button"
-              accessibilityLabel={`Live Currently Using, optional: ${live.status === 'on' ? 'on' : live.status === 'closed' ? 'closed by the phone' : 'off'}`}
+              accessibilityLabel={`Live app detection, optional: ${live.status === 'on' ? 'on' : live.status === 'closed' ? 'closed by the phone' : 'off'}`}
             >
               <InfoRow
                 icon="flash-outline"
-                label="Live Currently Using (optional)"
+                label="Live app detection (optional)"
                 sub={
                   live.status === 'on'
                     ? currentApp.switchValue
-                      ? `On. ${partnerName} sees app switches within a second or two. Turn it off in Android Settings › Accessibility.`
+                      ? `On. ${partnerName} sees the app you switch to within a second or two. Turn it off anytime in Android Settings › Accessibility.`
                       : 'On, but nothing is shared while "Share the app I’m using" is off.'
                     : live.status === 'closed'
-                      ? 'On, but your phone closed it. Tap to see how to bring it back.'
-                      : `Off. Turn it on so ${partnerName} sees the app you open right away, not minutes later. Only the app's name, never what's on your screen.`
+                      ? 'Accessibility is on, but your phone closed it. Tap to see how to bring it back.'
+                      : `Off. Tap to turn on Accessibility, so ${partnerName} sees the app you switch to right away instead of minutes later. Only the app’s name, never what’s on your screen.`
                 }
                 right={
                   <StatusBadge
