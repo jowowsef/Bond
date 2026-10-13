@@ -2,7 +2,7 @@
   "expo": {
     "name": "Bond",
     "slug": "bond",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "orientation": "portrait",
     "icon": "./assets/bond-icon.png",
     "scheme": "bond",
@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.bond.couple",
-      "versionCode": 6,
+      "versionCode": 7,
       "allowBackup": false,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {

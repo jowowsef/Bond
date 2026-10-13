@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BondLogo } from '@/components/BondLogo';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
+import { CoupleAvatars } from '@/components/CoupleAvatars';
 import { Redirect } from '@/components/Redirect';
 import { useCurrentAppSharing } from '@/hooks/useCurrentAppSharing';
 import { useLocationSharingSwitch } from '@/hooks/useLocationSharingSwitch';
@@ -80,8 +81,8 @@ type IconName = React.ComponentProps<typeof Ionicons>['name'];
 const PHONE_BRAND = String(((Platform.constants ?? {}) as { Brand?: string; Manufacturer?: string }).Brand ?? '').toLowerCase();
 const KEEPS_CLOSING_APPS = ['tecno', 'infinix', 'itel'].includes(PHONE_BRAND);
 type Tone = 'blue' | 'pink';
-type FeatureStep = Exclude<SharingStep, 'overview'>;
-const FEATURE_STEPS = SHARING_STEPS.filter((s): s is FeatureStep => s !== 'overview');
+type FeatureStep = Exclude<SharingStep, 'overview' | 'bonded'>;
+const FEATURE_STEPS = SHARING_STEPS.filter((s): s is FeatureStep => s !== 'overview' && s !== 'bonded');
 
 /** How each step looks in the overview list. */
 const OVERVIEW: Record<FeatureStep, { icon: IconName; title: string; desc: string; tone: Tone }> = {
@@ -94,8 +95,22 @@ const OVERVIEW: Record<FeatureStep, { icon: IconName; title: string; desc: strin
 
 export default function SharingSetup() {
   useThemeVersion();
-  const { phase, userId, couple, partnerProfile, pairingSetup, advancePairingSetup, ensurePairingReset, refresh } = useCouple();
-  const partnerName = partnerProfile?.display_name ?? 'your partner';
+  const {
+    phase,
+    userId,
+    couple,
+    myProfile,
+    partnerProfile,
+    myAvatarUrl,
+    partnerAvatarUrl,
+    pairingSetup,
+    advancePairingSetup,
+    ensurePairingReset,
+    refresh,
+  } = useCouple();
+  // A partner who hasn't chosen a name yet is still "Me" on the server.
+  const rawPartnerName = partnerProfile?.display_name?.trim();
+  const partnerName = rawPartnerName && rawPartnerName !== 'Me' ? rawPartnerName : 'your partner';
   const coupleId = couple?.id ?? null;
 
   const [step, setStep] = useState<SharingStep | null>(null);
@@ -232,6 +247,56 @@ export default function SharingSetup() {
       const { error } = await supabase.from('privacy_settings').update({ share_screen_time: true }).eq('user_id', userId);
       if (error) Alert.alert('Not turned on', 'Check your connection and try again.');
     });
+  }
+
+  // ---------------- Just paired ----------------
+  if (step === 'bonded') {
+    const named = partnerName !== 'your partner';
+    return (
+      <SafeAreaView style={styles.screen}>
+        <ScrollView contentContainerStyle={styles.bonded} showsVerticalScrollIndicator={false}>
+          <View style={styles.bondedArt}>
+            <CoupleAvatars
+              me={{ name: myProfile?.display_name, url: myAvatarUrl, tint: colors.me }}
+              partner={{ name: partnerProfile?.display_name, url: partnerAvatarUrl, tint: colors.partner }}
+              variant="together"
+              size={96}
+            />
+            <Ionicons name="sparkles" size={20} color={colors.pink} style={styles.sparkleTop} />
+            <Ionicons name="sparkles" size={13} color={colors.blue} style={styles.sparkleLeft} />
+          </View>
+          <Text style={styles.title}>You&apos;re bonded!</Text>
+          <Text style={styles.body}>
+            {named ? `You and ${partnerName} are now connected.` : 'You and your partner are now connected.'} Here&apos;s what
+            you can choose to share. Nothing is shared yet:
+          </Text>
+          <Card style={styles.shareList}>
+            {(
+              [
+                ['Location', 'location-outline', true],
+                ['Battery', 'battery-half-outline', true],
+                ['Screen time', 'time-outline', usageSupported],
+                ['Currently Using', 'phone-portrait-outline', usageSupported],
+              ] as [string, IconName, boolean][]
+            )
+              .filter(([, , available]) => available)
+              .map(([label, icon], i) => (
+                <View key={label} style={[styles.shareRow, i > 0 && styles.shareDivider]}>
+                  <View style={styles.shareCheck}>
+                    <Ionicons name={icon} size={15} color={colors.primary} />
+                  </View>
+                  <Text style={styles.shareLabel}>{label}</Text>
+                  <Text style={styles.shareOff}>Off</Text>
+                </View>
+              ))}
+          </Card>
+          <Text style={styles.bondedNote}>Everything starts off. Next, you choose what to turn on, with a few quick permissions.</Text>
+        </ScrollView>
+        <View style={styles.bottom}>
+          <Button label="Continue" onPress={() => void go('overview')} disabled={!step} />
+        </View>
+      </SafeAreaView>
+    );
   }
 
   // ---------------- Overview ----------------
@@ -581,6 +646,18 @@ function ResetWarning({ failed, onRetry }: { failed: boolean; onRetry: () => voi
 const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.background },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
+  // Just paired
+  bonded: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: spacing.xl, paddingVertical: spacing.xl },
+  bondedArt: { alignSelf: 'center', paddingHorizontal: spacing.xl, marginBottom: spacing.xl },
+  sparkleLeft: { position: 'absolute', top: 6, left: 4 },
+  shareList: { marginTop: spacing.lg, paddingVertical: spacing.xs },
+  shareRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md },
+  shareDivider: { borderTopWidth: 1, borderTopColor: colors.border },
+  shareCheck: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  shareLabel: { ...font.body, fontWeight: '600', color: colors.text, flex: 1 },
+  shareOff: { ...font.small, color: colors.muted },
+  bondedNote: { ...font.small, color: colors.muted, textAlign: 'center', marginTop: spacing.md, lineHeight: 18 },
 
   // Overview
   overview: { padding: spacing.xl, paddingBottom: spacing.lg },

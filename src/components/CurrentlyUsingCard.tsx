@@ -10,7 +10,7 @@ import { timeAgo } from '@/lib/format';
 import { colors, font, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 
 /**
- * HOME (top): compact "Currently Using" for my PARTNER only (their own row;
+ * HOME "Right now": what my PARTNER is using (their phone's latest check), for my partner only (their own row;
  * never mine, never a previous partner's).
  *
  *   [icon] TikTok                 Currently Using
@@ -27,12 +27,15 @@ export function CurrentlyUsingCard({
   hasPartner,
   partnerName,
   partner,
+  partnerTint,
 }: {
   userId: string | null;
   hasPartner: boolean;
   partnerName: string;
   /** From usePartnerCurrentApp (loaded by Home, so pull to refresh and polling reload it). */
   partner: { setting: CurrentAppSetting | null; row: CurrentAppRow | null; now: number };
+  /** The partner's avatar color, for the small badge on the app icon. */
+  partnerTint?: string;
 }) {
   useThemeVersion();
   const mine = useCurrentAppSharing(userId, partnerName);
@@ -77,59 +80,107 @@ export function CurrentlyUsingCard({
   }
   const muted = !showIcon || stale;
 
+  const live = showIcon && !stale;
+  const ago = partner.row ? timeAgo(partner.row.checked_at, partner.now) : '';
+
   return (
-    <Card style={styles.card}>
-      <View style={styles.row}>
-        {showIcon ? (
-          <View style={stale ? styles.faded : undefined}>
-            <AppIcon uri={pkg ? icons[pkg] : null} size={32} />
+    <>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle} accessibilityRole="header">
+          Right now
+        </Text>
+        {live ? (
+          <View style={styles.livePill}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>Live</Text>
           </View>
-        ) : (
-          <View style={styles.placeholder}>
-            <Ionicons name="phone-portrait-outline" size={16} color={colors.subtext} />
+        ) : null}
+      </View>
+      <Card style={styles.card}>
+        <View style={styles.row}>
+          <View style={styles.iconWrap}>
+            {showIcon ? (
+              <View style={stale ? styles.faded : undefined}>
+                <AppIcon uri={pkg ? icons[pkg] : null} size={40} />
+              </View>
+            ) : (
+              <View style={styles.placeholder}>
+                <Ionicons name="phone-portrait-outline" size={18} color={colors.subtext} />
+              </View>
+            )}
+            {hasPartner ? (
+              <View style={[styles.badge, { backgroundColor: partnerTint ?? colors.partner }]}>
+                <Text style={styles.badgeText}>{(partnerName.trim()[0] ?? '?').toUpperCase()}</Text>
+              </View>
+            ) : null}
           </View>
-        )}
-        <View style={styles.text}>
-          <Text style={[styles.app, muted && styles.muted]} numberOfLines={1}>
-            {title}
-          </Text>
-          {detail ? (
-            <Text style={[styles.detail, stale && { color: colors.warning }]} numberOfLines={1}>
-              {detail}
+          <View style={styles.text}>
+            {showIcon ? <Text style={styles.label}>{stale ? `${partnerName} last used` : `${partnerName} is using`}</Text> : null}
+            <Text style={[styles.app, muted && styles.muted]} numberOfLines={1}>
+              {title}
             </Text>
+            {!showIcon && detail ? (
+              <Text style={[styles.detail, stale && { color: colors.warning }]} numberOfLines={1}>
+                {detail}
+              </Text>
+            ) : null}
+          </View>
+          {showIcon ? (
+            <View style={[styles.timePill, stale && styles.timePillStale]}>
+              <Text style={[styles.timeText, stale && { color: colors.warning }]}>{stale ? `${ago} · old` : ago}</Text>
+            </View>
           ) : null}
         </View>
-        <Text style={styles.label} numberOfLines={1}>
-          {partnerName} · Currently Using
-        </Text>
-      </View>
-      {mine.status === 'needs-access' ? (
-        <Pressable onPress={mine.openAccessSettings} hitSlop={6} accessibilityRole="button" style={styles.mine}>
-          <Ionicons name="alert-circle-outline" size={14} color={colors.warning} />
-          <Text style={styles.mineText}>Yours needs Usage access · Fix</Text>
-        </Pressable>
-      ) : null}
-    </Card>
+        {mine.status === 'needs-access' ? (
+          <Pressable onPress={mine.openAccessSettings} hitSlop={6} accessibilityRole="button" style={styles.mine}>
+            <Ionicons name="alert-circle-outline" size={14} color={colors.warning} />
+            <Text style={styles.mineText}>Yours needs Usage access · Fix</Text>
+          </Pressable>
+        ) : null}
+      </Card>
+    </>
   );
 }
 
 const styles = themedStyles(() => ({
-  card: { marginTop: spacing.lg, paddingVertical: spacing.md },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.xl, marginBottom: spacing.sm },
+  headerTitle: { ...font.h3, color: colors.text },
+  livePill: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.success },
+  liveText: { ...font.small, fontWeight: '700', color: colors.success },
+  card: { paddingVertical: spacing.md },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  iconWrap: { width: 44, height: 44, justifyContent: 'center' },
   faded: { opacity: 0.5 },
   placeholder: {
-    width: 32,
-    height: 32,
-    borderRadius: 9,
-    backgroundColor: colors.track,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: colors.pinkSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  badge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: { ...font.tiny, fontSize: 9, letterSpacing: 0, color: colors.text, fontWeight: '800' },
   text: { flex: 1 },
-  app: { ...font.body, fontWeight: '700', color: colors.text },
-  muted: { color: colors.subtext, fontWeight: '600' },
+  label: { ...font.small, color: colors.subtext },
+  app: { ...font.h3, fontSize: 17, color: colors.text, marginTop: 1 },
+  muted: { color: colors.subtext, fontWeight: '600', fontSize: 15 },
   detail: { ...font.tiny, color: colors.muted, marginTop: 2, letterSpacing: 0 },
-  label: { ...font.tiny, color: colors.muted, maxWidth: 130, letterSpacing: 0 },
+  timePill: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: 999, backgroundColor: colors.track },
+  timePillStale: { backgroundColor: colors.warningSoft },
+  timeText: { ...font.tiny, color: colors.subtext, letterSpacing: 0 },
   mine: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.sm },
   mineText: { ...font.tiny, color: colors.warning, letterSpacing: 0 },
 }));

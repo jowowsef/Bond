@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import { Redirect } from '@/components/Redirect';
 import React, { useEffect } from 'react';
+import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBackgroundLocation } from '@/hooks/useBackgroundLocation';
 import { useCurrentAppSync } from '@/hooks/useCurrentApp';
@@ -13,8 +14,10 @@ import { usePartnerAlerts } from '@/hooks/usePartnerAlerts';
 import { useActivityUnreadTracker } from '@/lib/activityUnread';
 import { registerBackgroundJobs } from '@/lib/backgroundJobs';
 import { maybeSendDailySummary } from '@/lib/dailySummary';
-import { colors, fontFamily, useThemeVersion } from '@/lib/theme';
+import { colors, isDarkTheme, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
+
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 /**
  * The four main tabs, shown only once two partners are connected. Settings
@@ -78,44 +81,66 @@ export default function TabsLayout() {
     return <Redirect href="/" />;
   }
 
-  // Lift the bar off the bottom edge: the device's safe-area inset (gesture
-  // bar / nav buttons) plus comfortable breathing room. Applied once here, so
-  // all four tabs stay consistent.
-  const bottomPad = Math.max(insets.bottom, 12) + 16;
+  // A floating, rounded bar with icons only (the screen's own title says
+  // where you are). It sits in its own space above the device's safe-area
+  // inset, so it never covers a screen's content.
+  const bottomPad = Math.max(insets.bottom, 12) + 8;
+  const barColor = isDarkTheme() ? colors.card : colors.text;
+  const tabIcon = (name: IconName, label: string) => {
+    const Icon = ({ focused }: { focused: boolean }) => (
+      <View
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 22,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: focused ? colors.background : 'transparent',
+        }}
+        accessibilityLabel={label}
+      >
+        <Ionicons name={name} size={21} color={focused ? colors.text : colors.muted} />
+      </View>
+    );
+    return Icon;
+  };
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.muted,
+        tabBarShowLabel: false,
         tabBarStyle: {
-          backgroundColor: colors.card,
-          borderTopColor: colors.border,
-          height: 56 + bottomPad,
-          paddingBottom: bottomPad,
-          paddingTop: 10,
+          backgroundColor: colors.background,
+          borderTopWidth: 0,
+          elevation: 0,
+          height: 64 + bottomPad + 8,
+          paddingTop: 8 + 10,
+          paddingBottom: bottomPad + 10,
+          paddingHorizontal: 32,
         },
-        tabBarLabelStyle: { fontFamily, fontSize: 11, fontWeight: '600', marginTop: 2 },
-        tabBarItemStyle: { paddingTop: 2 },
+        tabBarBackground: () => (
+          <View style={{ flex: 1, backgroundColor: colors.background }}>
+            <View
+              style={{
+                position: 'absolute',
+                left: 20,
+                right: 20,
+                top: 8,
+                height: 64,
+                borderRadius: 32,
+                backgroundColor: barColor,
+              }}
+            />
+          </View>
+        ),
+        tabBarItemStyle: { height: 44, alignItems: 'center', justifyContent: 'center' },
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{ title: 'Home', tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" size={size} color={color} /> }}
-      />
-      <Tabs.Screen
-        name="screen-time"
-        options={{ title: 'Screen Time', tabBarIcon: ({ color, size }) => <Ionicons name="time-outline" size={size} color={color} /> }}
-      />
-      <Tabs.Screen
-        name="location"
-        options={{ title: 'Location', tabBarIcon: ({ color, size }) => <Ionicons name="location-outline" size={size} color={color} /> }}
-      />
-      <Tabs.Screen
-        name="calendar"
-        options={{ title: 'Calendar', tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" size={size} color={color} /> }}
-      />
+      <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: tabIcon('home-outline', 'Home') }} />
+      <Tabs.Screen name="location" options={{ title: 'Location', tabBarIcon: tabIcon('location-outline', 'Location') }} />
+      <Tabs.Screen name="screen-time" options={{ title: 'Screen Time', tabBarIcon: tabIcon('phone-portrait-outline', 'Screen Time') }} />
+      <Tabs.Screen name="calendar" options={{ title: 'Calendar', tabBarIcon: tabIcon('calendar-outline', 'Calendar') }} />
     </Tabs>
   );
 }

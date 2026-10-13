@@ -10,8 +10,8 @@ import type { Profile } from './types';
 export type AvatarColor = 'blue' | 'pink';
 
 export const AVATAR_CHOICES: { key: AvatarColor; label: string; color: string }[] = [
-  { key: 'blue', label: 'Blue', color: colors.me },
-  { key: 'pink', label: 'Pink', color: colors.partner },
+  { key: 'blue', label: 'Sky blue', color: colors.me },
+  { key: 'pink', label: 'Blush pink', color: colors.partner },
 ];
 
 /** The circle colour for a chosen avatar colour (falls back to soft primary). */

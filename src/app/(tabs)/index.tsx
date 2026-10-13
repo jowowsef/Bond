@@ -3,25 +3,27 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useRef } from 'react';
 import { AppState, RefreshControl, Text, View } from 'react-native';
 import { ApprovalRequestCard } from '@/components/ApprovalRequestCard';
-import { AvatarStack } from '@/components/AvatarStack';
 import { BondLogo } from '@/components/BondLogo';
 import { Card } from '@/components/Card';
+import { CoupleAvatars } from '@/components/CoupleAvatars';
 import { CurrentlyUsingCard } from '@/components/CurrentlyUsingCard';
 import { HeaderActions } from '@/components/HeaderActions';
-import { NavCard } from '@/components/NavCard';
 import { Screen } from '@/components/Screen';
 import { ScreenTimeSummaryCard } from '@/components/ScreenTimeSummaryCard';
 import { SectionHeader } from '@/components/SectionHeader';
 import { useMyBattery, usePartnerBattery } from '@/hooks/useBattery';
+import { useCoupleLocations } from '@/hooks/useCoupleLocations';
 import { activityMessage, activityVisual, useActivityFeed } from '@/hooks/useActivityFeed';
 import { usePartnerCurrentApp } from '@/hooks/useCurrentApp';
 import { useMyUsage } from '@/hooks/useMyUsage';
 import { usePartnerUsage } from '@/hooks/usePartnerUsage';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { tintForProfile } from '@/lib/avatar';
 import { syncBatteryIfSharing } from '@/lib/battery';
 import { syncCurrentAppIfSharing } from '@/lib/currentApp';
+import { distanceMeters } from '@/lib/location';
 import { dayKey, greeting, timeAgo } from '@/lib/format';
-import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
+import { colors, font, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
 /**
@@ -35,8 +37,19 @@ import { useCouple } from '@/state/couple';
 export default function Home() {
   useThemeVersion();
   const router = useRouter();
-  const { userId, myProfile, partnerProfile, partnerId, incomingRequests, outgoingRequests, refresh, refreshRequests } =
-    useCouple();
+  const {
+    userId,
+    myProfile,
+    partnerProfile,
+    partnerId,
+    myAvatarUrl,
+    partnerAvatarUrl,
+    incomingRequests,
+    outgoingRequests,
+    refresh,
+    refreshRequests,
+  } = useCouple();
+  const places = useCoupleLocations();
   const { logs, reload: reloadActivity } = useActivityFeed(3);
   const myBattery = useMyBattery();
   const {
@@ -101,26 +114,73 @@ export default function Home() {
 
   return (
     <Screen
-      headerLeft={<BondLogo size={24} />}
-      right={
-        <View style={styles.headerRight}>
-          <AvatarStack />
-          <HeaderActions gearBadge={incomingRequests.length > 0} />
+      headerLeft={
+        <View>
+          <Text style={styles.greeting}>
+            {greeting()}, {myName === 'Me' ? 'you' : myName}
+          </Text>
+          <BondLogo size={20} />
         </View>
       }
+      right={<HeaderActions gearBadge={incomingRequests.length > 0} />}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
       }
     >
-      <Text style={styles.greeting}>{greeting()}</Text>
-      <Text style={styles.title}>Today, together</Text>
       {refreshFailed ? (
         <Text style={styles.refreshError}>Couldn&apos;t refresh everything. Check your connection and pull again.</Text>
       ) : null}
 
       <View style={styles.inner}>
-        {/* First thing on Home: what the partner is using (their phone's last report). */}
-        <CurrentlyUsingCard userId={userId} hasPartner={!!partnerId} partnerName={partnerName} partner={partnerApp} />
+        {/* The two of you: where you are and your battery (only what each shares). */}
+        <Card style={styles.couple}>
+          <CoupleAvatars
+            me={{ name: myName, url: myAvatarUrl, tint: tintForProfile(myProfile) }}
+            partner={partnerId ? { name: partnerName, url: partnerAvatarUrl, tint: tintForProfile(partnerProfile) } : null}
+            size={64}
+          />
+          <View style={styles.people}>
+            <Person
+              name="You"
+              place={places.me.sharing ? places.me.place : null}
+              battery={myBattery.level > 0 ? `${myBattery.level}%${myBattery.charging ? ' · charging' : ''}` : null}
+            />
+            <Person
+              name={partnerName}
+              place={places.partner.sharing ? places.partner.place : null}
+              battery={
+                partnerBattery && partnerBattery.level != null && partnerBattery.level > 0
+                  ? `${partnerBattery.level}%${partnerBattery.is_charging ? ' · charging' : ''}${partnerBatteryStale ? ' · old' : ''}`
+                  : partnerBatterySharing
+                    ? 'Battery: waiting'
+                    : 'Battery not shared'
+              }
+            />
+          </View>
+          <View style={styles.coupleFooter}>
+            <View style={styles.footerLeft}>
+              <Ionicons name="location-outline" size={14} color={colors.subtext} />
+              <Text style={styles.footerText} onPress={() => router.push('/location')}>
+                {distanceText(places.me.loc, places.partner.loc) ??
+                  (places.partner.sharing ? places.partner.statusLabel : 'Location not shared')}
+              </Text>
+            </View>
+            {partnerBattery?.updated_at ? (
+              <Text style={[styles.footerText, partnerBatteryStale && { color: colors.warning }]}>
+                Updated {timeAgo(partnerBattery.updated_at)}
+              </Text>
+            ) : null}
+          </View>
+        </Card>
+
+        {/* What the partner is using (their phone's latest check). */}
+        <CurrentlyUsingCard
+          userId={userId}
+          hasPartner={!!partnerId}
+          partnerName={partnerName}
+          partner={partnerApp}
+          partnerTint={tintForProfile(partnerProfile)}
+        />
         {/* Pending approvals that need MY decision */}
         {incomingRequests.length > 0 ? (
           <View style={styles.requests}>
@@ -151,80 +211,8 @@ export default function Home() {
           </View>
         ) : null}
 
-        <View style={styles.cards}>
-          <NavCard
-            icon="location-outline"
-            title="Location"
-            subtitle="See where you both are"
-            accent={colors.blue}
-            accentBg={colors.blueSoft}
-            onPress={() => router.push('/location')}
-          />
-        </View>
-
         {/* Today's screen time for both; a tap opens the detailed statistics. */}
         <ScreenTimeSummaryCard hasPartner={!!partnerId} partnerName={partnerName} mine={myUsage} partner={partnerUsage} />
-
-        <SectionHeader title="Battery" />
-        <Card>
-          <View style={styles.batteryRow}>
-            <Text style={styles.batteryName}>You</Text>
-            <View style={styles.batteryRight}>
-              {myBattery.charging ? (
-                <Ionicons name="flash" size={14} color={colors.success} style={{ marginRight: 4 }} />
-              ) : null}
-              {myBattery.level > 0 && myBattery.charging ? <Text style={styles.batteryCharging}>Charging</Text> : null}
-              <Text style={styles.batteryValue}>{myBattery.level > 0 ? `${myBattery.level}%` : 'Unavailable'}</Text>
-            </View>
-          </View>
-          <View style={[styles.batteryRow, styles.batteryDivider]}>
-            <Text style={styles.batteryName}>{partnerName}</Text>
-            <View style={styles.batteryRight}>
-              {partnerBattery && partnerBattery.level != null && partnerBattery.level > 0 ? (
-                <>
-                  {/* An older reading is never shown as if it were live: a small
-                      amber clock and a dimmed value mark it as possibly not current. */}
-                  {partnerBatteryStale ? (
-                    <Ionicons
-                      name="time-outline"
-                      size={15}
-                      color={colors.warning}
-                      accessible
-                      accessibilityLabel="Not current"
-                    />
-                  ) : null}
-                  {partnerBattery.is_charging ? (
-                    <>
-                      <Ionicons name="flash" size={14} color={colors.success} />
-                      <Text style={styles.batteryCharging}>Charging</Text>
-                    </>
-                  ) : null}
-                  <Text
-                    style={[styles.batteryValue, partnerBatteryStale && styles.batteryStale]}
-                    accessibilityLabel={`${partnerBattery.level} percent${partnerBatteryStale ? ', not current' : ''}`}
-                  >
-                    {partnerBattery.level}%
-                  </Text>
-                </>
-              ) : partnerBattery ? (
-                <Text style={styles.batteryMuted}>Unavailable</Text>
-              ) : partnerBatterySharing ? (
-                // Sharing is on but their phone hasn't sent a reading yet.
-                <Text style={styles.batteryMuted}>Waiting for update</Text>
-              ) : (
-                <Text style={styles.batteryMuted}>Not shared</Text>
-              )}
-            </View>
-          </View>
-          {/* When the partner's reading was taken, so an old value is never read as live. */}
-          {partnerBattery?.updated_at ? (
-            <Text style={[styles.batteryUpdated, partnerBatteryStale && { color: colors.warning }]}>
-              Updated {timeAgo(partnerBattery.updated_at)}
-              {partnerBatteryStale ? ' · not current' : ''}
-            </Text>
-          ) : null}
-        </Card>
-
 
         <SectionHeader
           title="Recent activity"
@@ -264,9 +252,57 @@ export default function Home() {
   );
 }
 
+/** "1.2 km apart" when both locations are known (null otherwise). */
+function distanceText(
+  a: { latitude: number; longitude: number } | null,
+  b: { latitude: number; longitude: number } | null,
+): string | null {
+  if (!a || !b) return null;
+  const m = distanceMeters(a.latitude, a.longitude, b.latitude, b.longitude);
+  if (m < 100) return 'Together';
+  return m < 1000 ? `${Math.round(m / 10) * 10} m apart` : `${(m / 1000).toFixed(m < 10_000 ? 1 : 0)} km apart`;
+}
+
+function Person({ name, place, battery }: { name: string; place: string | null; battery: string | null }) {
+  useThemeVersion();
+  return (
+    <View style={styles.person}>
+      <Text style={styles.personName} numberOfLines={1}>
+        {name}
+      </Text>
+      {place ? (
+        <Text style={styles.personSub} numberOfLines={1}>
+          {place}
+        </Text>
+      ) : null}
+      {battery ? (
+        <Text style={styles.personSub} numberOfLines={1}>
+          {battery}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 const styles = themedStyles(() => ({
+  couple: { marginTop: spacing.md, paddingVertical: spacing.lg },
+  people: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.sm },
+  person: { width: '42%', alignItems: 'center' },
+  personName: { ...font.h3, color: colors.text },
+  personSub: { ...font.tiny, color: colors.subtext, marginTop: 2, letterSpacing: 0, textAlign: 'center' },
+  coupleFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  footerLeft: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 },
+  footerText: { ...font.small, color: colors.subtext },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  greeting: { ...font.body, color: colors.subtext },
+  greeting: { ...font.small, color: colors.subtext, marginBottom: 2 },
   title: { ...font.title, color: colors.text, marginTop: 2 },
   refreshError: { ...font.small, color: colors.danger, marginTop: spacing.sm },
   inner: {},

@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Card } from '@/components/Card';
+import { ProgressRing } from '@/components/ProgressRing';
 import { SectionHeader } from '@/components/SectionHeader';
 import type { MyUsageState } from '@/hooks/useMyUsage';
 import { PARTNER_STALE_MS, type PartnerUsage } from '@/hooks/usePartnerUsage';
@@ -68,46 +68,59 @@ export function ScreenTimeSummaryCard({
               ? "Couldn't read this phone's usage"
               : 'Loading…';
 
+  // Rings compare the two of you: the larger total fills most of its ring.
+  const myMs = s.kind === 'ready' ? s.usage.totalMs : 0;
+  const partnerMs = partnerValue && partner.total ? partner.total.total_ms : 0;
+  const scale = Math.max(myMs, partnerMs, 1) / 0.8;
+
   return (
     <>
-      <SectionHeader title="Screen time today" />
-      <Card>
-        <PersonRow
+      <SectionHeader
+        title="Screen time today"
+        right={
+          <Text style={styles.seeAll} onPress={() => router.push('/screen-time')} accessibilityRole="link">
+            See all
+          </Text>
+        }
+      />
+      <View style={styles.tiles}>
+        <Tile
+          name="You"
+          value={myValue}
+          sub={mySub}
+          progress={myMs / scale}
+          accent={colors.me}
+          onPress={() => router.push(s.kind === 'ready' ? '/screen-time-stats' : '/screen-time')}
+        />
+        <Tile
           name={partnerName}
           value={partnerValue}
           sub={partnerSub}
           warn={partnerWarn}
+          progress={partnerMs / scale}
           accent={colors.partner}
           onPress={partnerOpenable ? () => router.push({ pathname: '/screen-time-stats', params: { who: 'partner' } }) : undefined}
         />
-        <PersonRow
-          name="You"
-          value={myValue}
-          sub={mySub}
-          accent={colors.me}
-          divider
-          onPress={() => router.push(s.kind === 'ready' ? '/screen-time-stats' : '/screen-time')}
-        />
-      </Card>
+      </View>
     </>
   );
 }
 
-function PersonRow({
+function Tile({
   name,
   value,
   sub,
   warn,
+  progress,
   accent,
-  divider,
   onPress,
 }: {
   name: string;
   value: string | null;
   sub: string;
   warn?: boolean;
+  progress: number;
   accent: string;
-  divider?: boolean;
   onPress?: () => void;
 }) {
   useThemeVersion();
@@ -117,27 +130,36 @@ function PersonRow({
       disabled={!onPress}
       accessibilityRole={onPress ? 'button' : undefined}
       accessibilityLabel={`${name} screen time ${value ?? sub}`}
-      style={({ pressed }) => [styles.row, divider && styles.divider, pressed && { opacity: 0.6 }]}
+      style={({ pressed }) => [styles.tileWrap, pressed && { opacity: 0.7 }]}
     >
-      <View style={[styles.dot, { backgroundColor: accent }]} />
-      <View style={styles.text}>
-        <Text style={styles.name}>{name}</Text>
-        <Text style={[styles.sub, warn && { color: colors.warning }]} numberOfLines={2}>
-          {sub}
-        </Text>
-      </View>
-      {value ? <Text style={styles.value}>{value}</Text> : null}
-      {onPress ? <Ionicons name="chevron-forward" size={18} color={colors.muted} style={{ marginLeft: spacing.xs }} /> : null}
+      <Card style={styles.tile}>
+        <ProgressRing progress={value ? progress : 0} size={46} thickness={5} color={accent} />
+        <View style={styles.tileText}>
+          <Text style={styles.name} numberOfLines={1}>
+            {name}
+          </Text>
+          {value ? (
+            <Text style={styles.value} numberOfLines={1}>
+              {value}
+            </Text>
+          ) : (
+            <Text style={[styles.sub, warn && { color: colors.warning }]} numberOfLines={2}>
+              {sub}
+            </Text>
+          )}
+        </View>
+      </Card>
     </Pressable>
   );
 }
 
 const styles = themedStyles(() => ({
-  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm + 2 },
-  divider: { borderTopWidth: 1, borderTopColor: colors.border },
-  dot: { width: 10, height: 10, borderRadius: 5, marginRight: spacing.md },
-  text: { flex: 1, marginRight: spacing.sm },
-  name: { ...font.body, fontWeight: '600', color: colors.text },
-  sub: { ...font.small, color: colors.subtext, marginTop: 2 },
-  value: { ...font.body, fontWeight: '700', color: colors.text },
+  seeAll: { ...font.small, fontWeight: '700', color: colors.primary },
+  tiles: { flexDirection: 'row', gap: spacing.md },
+  tileWrap: { flex: 1 },
+  tile: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md, paddingHorizontal: spacing.md },
+  tileText: { flex: 1 },
+  name: { ...font.small, color: colors.subtext },
+  sub: { ...font.tiny, color: colors.muted, marginTop: 2, letterSpacing: 0 },
+  value: { ...font.h2, fontSize: 18, color: colors.text, marginTop: 1 },
 }));

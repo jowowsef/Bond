@@ -73,7 +73,8 @@ export default function Index() {
     // saved step (survives leaving Bond, Android Settings and restarts).
     if (pairingSetup === 'sharing') return <Redirect href="/sharing-setup" />;
     if (pairingSetup === 'name') return <Redirect href="/name-setup" />;
-    if (pairingSetup === 'color') return <Redirect href="/color-setup" />;
+    // Name and avatar color are one screen ("Make it yours").
+    if (pairingSetup === 'color') return <Redirect href="/name-setup" />;
     // Existing pairing whose profile was never finished (older accounts).
     if (profileStep === 'name') return <Redirect href="/name-setup" />;
     if (profileStep === 'color') return <Redirect href="/color-setup" />;
