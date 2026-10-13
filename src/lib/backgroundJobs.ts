@@ -3,7 +3,9 @@ import * as Battery from 'expo-battery';
 import * as TaskManager from 'expo-task-manager';
 import { Linking, Platform } from 'react-native';
 import { syncBatteryIfSharing } from './battery';
+import BondUsage from '../../modules/bond-usage';
 import { syncCurrentAppIfSharing } from './currentApp';
+import { logDiagnostic } from './currentAppServiceControl';
 // Defines the background location task at startup (Android may start Bond
 // just to deliver a location while it is closed).
 import './backgroundLocation';
@@ -111,9 +113,24 @@ defineJob(SCREEN_TIME_TASK, async () => {
 // access checked inside; pairing and setup checked here).
 defineJob(CURRENT_APP_TASK, async () => {
   const userId = await pairedAndSetUp();
-  if (userId) await syncCurrentAppIfSharing(userId);
+  if (userId) {
+    // Backup for phones that close Bond (for example Tecno): bring the
+    // background service back if it was on. It checks every rule again.
+    resumeBackgroundServiceIfClosed();
+    await syncCurrentAppIfSharing(userId);
+  }
   return Success;
 });
+
+function resumeBackgroundServiceIfClosed(): void {
+  try {
+    if (BondUsage?.isCurrentAppServiceRunning?.()) return;
+    // Only when it was on and the phone closed it; it logs its own restart.
+    if (BondUsage?.resumeBackgroundService?.()) logDiagnostic('background job: service was closed, asked Android to start it again');
+  } catch {
+    // older build
+  }
+}
 
 // Receiving side of partner alerts: show any low-battery alerts addressed to me.
 defineJob(PARTNER_ALERTS_TASK, async () => {

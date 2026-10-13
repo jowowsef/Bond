@@ -8,6 +8,7 @@ import { BackHeader } from '@/components/BackHeader';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { isBatteryOptimizedForBond } from '@/lib/backgroundJobs';
+import { liveLastChangeAt, readLiveStatus } from '@/lib/liveMode';
 import { serviceModes } from '@/lib/currentAppServiceControl';
 import { getUsageSupport, hasUsageAccess } from '@/lib/screenTime';
 import { getNotificationState } from '@/lib/setupPermissions';
@@ -42,6 +43,12 @@ async function read(): Promise<Snapshot> {
   } catch {
     lines = ['(could not read the log)'];
   }
+  const live = readLiveStatus();
+  const lastLive = liveLastChangeAt();
+  const liveRows: [string, string][] = [
+    ['Live mode (Accessibility)', live === 'on' ? 'ON (live app switches)' : live === 'closed' ? 'on, but CLOSED by the phone' : live === 'off' ? 'off (usage log fallback)' : 'not in this build'],
+    ['Live: last app switch', lastLive > 0 ? new Date(lastLive).toLocaleTimeString() : 'none yet'],
+  ];
   let restrictions: [string, string][] = [];
   try {
     const r = BondUsage?.getBackgroundRestrictions?.();
@@ -56,7 +63,7 @@ async function read(): Promise<Snapshot> {
     // older build
   }
   return {
-    restrictions,
+    restrictions: [...liveRows, ...restrictions],
     modes: serviceModes(),
     usage: getUsageSupport() !== 'ready' ? 'not supported' : hasUsageAccess() ? 'allowed' : 'NOT allowed',
     batteryOptimized: await isBatteryOptimizedForBond(),

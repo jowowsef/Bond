@@ -10,11 +10,12 @@ import android.content.pm.PackageManager
  * Which app is in front right now, from Android's usage event log (the same
  * log Screen Time uses; needs "Usage access"). Read-only.
  *
- * Incremental: the first call reads the last 3 hours (to know an app that was
- * opened long ago and is still in front); later calls read only the events
- * since the previous call (plus a 10-second overlap, in case Android logs an
- * event slightly late; replaying it changes nothing), so
- * a check every 20 seconds stays cheap.
+ * Rolling window (UsageQueryWindow): the first call reads the last 3 hours
+ * (to know an app that was opened long ago and is still in front); later calls
+ * read from the end of the last SUCCESSFUL read minus 2 minutes, because some
+ * phones log events late. Replaying events changes nothing, so a check every
+ * 20 seconds stays cheap. Only ACTIVITY_RESUMED sets the app; an empty read
+ * keeps it (see ForegroundState).
  *
  * Returns null when no app is in front: screen off, lock screen, or the home
  * screen (launchers and the system UI are not "an app").
@@ -26,29 +27,38 @@ class ForegroundAppDetector(private val context: Context) {
   private val labels = HashMap<String, String>()
 
   private val state by lazy { ForegroundState(excluded) }
-  private var lastQueryEnd = 0L
+  private val window = UsageQueryWindow(THREE_HOURS_MS, LATE_EVENTS_MS)
+
+  /** How long after it happened the last app change was seen (ms, for diagnostics). */
+  var lastChangeLagMs = 0L
+    private set
 
   data class App(val packageName: String, val appName: String)
 
   /** Forget what was seen (for example after the screen was off for a while). */
   fun reset() {
     state.reset()
-    lastQueryEnd = 0L
+    window.reset()
   }
 
   fun current(now: Long = System.currentTimeMillis()): App? {
-    val start = if (lastQueryEnd == 0L) now - THREE_HOURS_MS else lastQueryEnd - OVERLAP_MS
-    val events = usm.queryEvents(start, now)
+    val before = state.current
+    // Throws if the log can't be read: the window then stays where it was.
+    val events = usm.queryEvents(window.start(now), now)
     val event = UsageEvents.Event()
     while (events.hasNextEvent()) {
       events.getNextEvent(event)
       val pkg = event.packageName ?: continue
-      state.apply(event.eventType, pkg)
+      state.apply(event.eventType, pkg, event.timeStamp)
     }
-    lastQueryEnd = now
+    window.advance(now)
+    if (state.current != before && state.changedAt > 0) lastChangeLagMs = (now - state.changedAt).coerceAtLeast(0)
     val pkg = state.current ?: return null
     return App(pkg, labelFor(pkg))
   }
+
+  /** The app's name as the phone shows it (cached). */
+  fun label(pkg: String): String = labelFor(pkg)
 
   private fun labelFor(pkg: String): String = labels.getOrPut(pkg) {
     val pm = context.packageManager
@@ -69,6 +79,7 @@ class ForegroundAppDetector(private val context: Context) {
 
   companion object {
     private const val THREE_HOURS_MS = 3 * 60 * 60 * 1000L
-    private const val OVERLAP_MS = 10_000L
+    /** Events logged up to this late are still caught. */
+    private const val LATE_EVENTS_MS = 2 * 60_000L
   }
 }

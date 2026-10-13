@@ -14,7 +14,18 @@ class ForegroundState(private val excluded: Set<String>) {
   var current: String? = null
     private set
 
-  fun apply(type: Int, pkg: String) {
+  /** Time (ms) of the event that last changed [current] (0 = none yet). */
+  var changedAt = 0L
+    private set
+
+  /**
+   * Only real events change the app: a query with no events leaves it as it
+   * is. ACTIVITY_RESUMED (the same value as the old MOVE_TO_FOREGROUND) sets
+   * it; the app's own ACTIVITY_PAUSED, screen off, lock screen or shutdown
+   * clear it ("no app").
+   */
+  fun apply(type: Int, pkg: String, at: Long = 0L) {
+    val before = current
     when (type) {
       ACTIVITY_RESUMED -> current = if (pkg in excluded) null else pkg
       // (Not ACTIVITY_STOPPED: inside one app the old screen stops AFTER the
@@ -22,10 +33,12 @@ class ForegroundState(private val excluded: Set<String>) {
       ACTIVITY_PAUSED -> if (pkg == current) current = null
       SCREEN_NON_INTERACTIVE, KEYGUARD_SHOWN, DEVICE_SHUTDOWN -> current = null
     }
+    if (current != before) changedAt = at
   }
 
   fun reset() {
     current = null
+    changedAt = 0L
   }
 
   companion object {
@@ -35,6 +48,30 @@ class ForegroundState(private val excluded: Set<String>) {
     const val SCREEN_NON_INTERACTIVE = 16
     const val KEYGUARD_SHOWN = 17
     const val DEVICE_SHUTDOWN = 26
+  }
+}
+
+/**
+ * Which part of Android's usage log to read next. Rolling: each read starts
+ * where the last SUCCESSFUL read ended, minus [lateMs], because some phones
+ * write an event into the log a while after it happened (with its real, older
+ * time). Without that margin a quick switch (Messenger -> TikTok) logged late
+ * would fall before the next window and be missed for good, leaving the old
+ * app. Reading an event twice is harmless: events are replayed in order and
+ * the last one wins. A failed read never moves the window.
+ */
+class UsageQueryWindow(private val firstMs: Long, private val lateMs: Long) {
+  private var lastEnd = 0L
+
+  fun start(now: Long): Long = if (lastEnd == 0L) now - firstMs else minOf(lastEnd, now) - lateMs
+
+  /** Call only after the read up to [end] succeeded. */
+  fun advance(end: Long) {
+    if (end > lastEnd) lastEnd = end
+  }
+
+  fun reset() {
+    lastEnd = 0L
   }
 }
 

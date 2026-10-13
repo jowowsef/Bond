@@ -79,4 +79,54 @@ class BackgroundLogicTest {
     assertEquals(40_000L, RetryPolicy.delayMs(20_000, 2, 300_000))
     assertEquals(300_000L, RetryPolicy.delayMs(20_000, 9, 300_000))
   }
+
+  // ---- Rolling usage-log window (late events, fast switches) ----
+
+  /** A fake usage log: events with their real times, visible only after they are "written". */
+  private class FakeLog {
+    data class Ev(val at: Long, val type: Int, val pkg: String, val writtenAt: Long)
+    val events = mutableListOf<Ev>()
+    fun read(start: Long, end: Long, now: Long) = events.filter { it.at in start..end && it.writtenAt <= now }.sortedBy { it.at }
+  }
+
+  private fun check(log: FakeLog, w: UsageQueryWindow, s: ForegroundState, now: Long) {
+    for (e in log.read(w.start(now), now, now)) s.apply(e.type, e.pkg, e.at)
+    w.advance(now)
+  }
+
+  @Test fun fastSwitchLoggedLateIsStillCaught() {
+    val log = FakeLog(); val w = UsageQueryWindow(3 * 3600_000L, 120_000L); val s = state()
+    val t0 = 10_000_000L
+    log.events += FakeLog.Ev(t0, R, "com.facebook.orca", t0)
+    check(log, w, s, t0 + 1_000)
+    assertEquals("com.facebook.orca", s.current)
+    // Messenger -> TikTok 5 s later, but the phone writes it to the log 50 s late.
+    log.events += FakeLog.Ev(t0 + 5_000, P, "com.facebook.orca", t0 + 55_000)
+    log.events += FakeLog.Ev(t0 + 5_100, R, "com.ss.android.ugc.trill", t0 + 55_000)
+    check(log, w, s, t0 + 21_000) // not written yet: Messenger stays (no reset on an empty read)
+    assertEquals("com.facebook.orca", s.current)
+    check(log, w, s, t0 + 41_000)
+    check(log, w, s, t0 + 61_000) // written now, with its older time: still inside the window
+    assertEquals("com.ss.android.ugc.trill", s.current)
+    assertEquals(t0 + 5_100, s.changedAt)
+  }
+
+  @Test fun emptyReadsKeepTheApp() {
+    val log = FakeLog(); val w = UsageQueryWindow(3 * 3600_000L, 120_000L); val s = state()
+    log.events += FakeLog.Ev(1_000L, R, "com.google.android.youtube", 1_000L)
+    check(log, w, s, 2_000L)
+    for (i in 1..30) check(log, w, s, 2_000L + i * 20_000L) // 10 minutes of nothing new
+    assertEquals("com.google.android.youtube", s.current)
+  }
+
+  @Test fun windowOnlyMovesAfterASuccessfulRead() {
+    val w = UsageQueryWindow(3 * 3600_000L, 120_000L)
+    assertEquals(1_000_000L - 3 * 3600_000L, w.start(1_000_000L))
+    w.advance(1_000_000L)
+    assertEquals(1_000_000L - 120_000L, w.start(1_020_000L))
+    // A failed read (no advance) keeps the same start next time.
+    assertEquals(1_000_000L - 120_000L, w.start(1_040_000L))
+    w.advance(1_040_000L)
+    assertEquals(1_040_000L - 120_000L, w.start(1_060_000L))
+  }
 }

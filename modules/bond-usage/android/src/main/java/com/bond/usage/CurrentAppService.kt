@@ -59,6 +59,8 @@ class CurrentAppService : Service() {
   private var watchBattery = false
   private var watchScreenTime = false
   private var screenTimeFailures = 0
+  /** Whether the last app check used Live mode (to notice when it goes away). */
+  private var usedLive = false
   /** When Android last restarted this service (0 = started normally). */
   private var restartedAt = 0L
 
@@ -122,21 +124,24 @@ class CurrentAppService : Service() {
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    val restarted = intent == null
+    // Restarted by Android after the phone killed Bond (no intent), or brought
+    // back by Live mode: use the parts that were on before.
+    val restarted = intent == null || intent.getBooleanExtra(EXTRA_RESUME, false)
     if (restarted && !prefs.getBoolean(KEY_WANTED, false)) {
       // Restarted by Android, but nothing was on any more.
       stopSelf()
       return START_NOT_STICKY
     }
-    val title = intent?.getStringExtra(EXTRA_TITLE) ?: DEFAULT_TITLE
-    val body = intent?.getStringExtra(EXTRA_BODY) ?: DEFAULT_BODY
-    intervalMs = (intent?.getLongExtra(EXTRA_INTERVAL, DEFAULT_INTERVAL_MS) ?: prefs.getLong(KEY_INTERVAL, DEFAULT_INTERVAL_MS))
+    val given = if (restarted) null else intent
+    val title = given?.getStringExtra(EXTRA_TITLE) ?: DEFAULT_TITLE
+    val body = given?.getStringExtra(EXTRA_BODY) ?: DEFAULT_BODY
+    intervalMs = (given?.getLongExtra(EXTRA_INTERVAL, DEFAULT_INTERVAL_MS) ?: prefs.getLong(KEY_INTERVAL, DEFAULT_INTERVAL_MS))
       .coerceIn(MIN_INTERVAL_MS, MAX_INTERVAL_MS)
-    heartbeatMs = (intent?.getLongExtra(EXTRA_HEARTBEAT, DEFAULT_HEARTBEAT_MS) ?: prefs.getLong(KEY_HEARTBEAT, DEFAULT_HEARTBEAT_MS))
+    heartbeatMs = (given?.getLongExtra(EXTRA_HEARTBEAT, DEFAULT_HEARTBEAT_MS) ?: prefs.getLong(KEY_HEARTBEAT, DEFAULT_HEARTBEAT_MS))
       .coerceIn(MIN_HEARTBEAT_MS, MAX_HEARTBEAT_MS)
-    val apps = intent?.getBooleanExtra(EXTRA_WATCH_APPS, true) ?: prefs.getBoolean(KEY_APPS, false)
-    val battery = intent?.getBooleanExtra(EXTRA_WATCH_BATTERY, false) ?: prefs.getBoolean(KEY_BATTERY, false)
-    val screenTime = intent?.getBooleanExtra(EXTRA_WATCH_SCREEN_TIME, false) ?: prefs.getBoolean(KEY_SCREEN_TIME, false)
+    val apps = given?.getBooleanExtra(EXTRA_WATCH_APPS, true) ?: prefs.getBoolean(KEY_APPS, false)
+    val battery = given?.getBooleanExtra(EXTRA_WATCH_BATTERY, false) ?: prefs.getBoolean(KEY_BATTERY, false)
+    val screenTime = given?.getBooleanExtra(EXTRA_WATCH_SCREEN_TIME, false) ?: prefs.getBoolean(KEY_SCREEN_TIME, false)
     prefs.edit().putLong(KEY_INTERVAL, intervalMs).putLong(KEY_HEARTBEAT, heartbeatMs).apply()
 
     // Must become a foreground service right away (Android rule).
@@ -159,7 +164,11 @@ class CurrentAppService : Service() {
       detector = ForegroundAppDetector(applicationContext)
       BackgroundDiagnostics.log(
         applicationContext,
-        if (restarted) "service: restarted by Android (the phone had closed Bond)" else "service: started",
+        when {
+          intent == null -> "service: restarted by Android (the phone had closed Bond)"
+          restarted -> "service: restarted (${intent.getStringExtra(EXTRA_RESUME_WHY) ?: "resume"})"
+          else -> "service: started"
+        },
       )
     }
     instance = this
@@ -285,7 +294,16 @@ class CurrentAppService : Service() {
     }
     val power = getSystemService(Context.POWER_SERVICE) as PowerManager
     val screenOn = power.isInteractive
-    val app = if (screenOn) {
+    // Live mode (Accessibility) on: Android already told us the app in front,
+    // right away. Otherwise read Android's usage log (the fallback).
+    val live = LiveAppWatch.connected
+    if (!live && usedLive) detector?.reset() // back to the usage log: read it fresh
+    usedLive = live
+    val app = if (!screenOn) {
+      null
+    } else if (live) {
+      LiveAppWatch.current?.let { ForegroundAppDetector.App(it, detector?.label(it) ?: it) }
+    } else {
       try {
         detector?.current()
       } catch (e: Exception) {
@@ -293,12 +311,16 @@ class CurrentAppService : Service() {
         reschedule(intervalMs)
         return // unavailable this time: report nothing rather than guess
       }
-    } else {
-      null
     }
     val key = app?.packageName ?: NO_APP
     if (key != lastLoggedApp) {
-      BackgroundDiagnostics.log(ctx, "apps: detected ${app?.packageName ?: if (screenOn) "no app (home/lock screen)" else "no app (screen off)"}")
+      val lag = if (live) 0L else detector?.lastChangeLagMs ?: 0L
+      BackgroundDiagnostics.log(
+        ctx,
+        "apps: detected ${app?.packageName ?: if (screenOn) "no app (home/lock screen)" else "no app (screen off)"}" +
+          (if (live) " (live)" else "") +
+          if (lag >= 1000) " (switched ${lag / 1000}s ago)" else "",
+      )
       lastLoggedApp = key
     }
     val now = System.currentTimeMillis()
@@ -519,6 +541,9 @@ class CurrentAppService : Service() {
     const val EXTRA_WATCH_APPS = "watchApps"
     const val EXTRA_WATCH_BATTERY = "watchBattery"
     const val EXTRA_WATCH_SCREEN_TIME = "watchScreenTime"
+    /** Start again with the parts that were on before (used by Live mode). */
+    const val EXTRA_RESUME = "resume"
+    private const val EXTRA_RESUME_WHY = "resumeWhy"
     private const val PREFS = "bond_background_service"
     private const val KEY_WANTED = "wanted"
     private const val KEY_APPS = "apps"
@@ -568,6 +593,37 @@ class CurrentAppService : Service() {
      * from the background, unlike starting a foreground service). Returns
      * false when the service isn't running.
      */
+    /**
+     * Live mode saw a change (or turned on / off): check the app now. Returns
+     * false if the service (with app checks) isn't running.
+     */
+    fun onLiveChanged(): Boolean {
+      val svc = instance ?: return false
+      val h = svc.handler ?: return false
+      if (!svc.watchApps) return false
+      h.post { svc.reschedule(0) }
+      return true
+    }
+
+    /**
+     * Bring the service back if it was on (it saves its parts) and the phone
+     * closed it. Live mode calls this; it's allowed when Bond's battery use is
+     * unrestricted. Never starts anything that was turned off.
+     */
+    /** Returns true if it asked Android to start the service again. */
+    fun resumeIfWanted(context: Context, why: String): Boolean {
+      if (running) return false
+      if (!context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_WANTED, false)) return false
+      val intent = Intent(context, CurrentAppService::class.java).putExtra(EXTRA_RESUME, true).putExtra(EXTRA_RESUME_WHY, why)
+      return try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
+        true
+      } catch (e: Exception) {
+        BackgroundDiagnostics.log(context, "service: could not restart for $why (${e.javaClass.simpleName}); starts when Bond is opened")
+        false
+      }
+    }
+
     fun updateModes(apps: Boolean, battery: Boolean, screenTime: Boolean): Boolean {
       val svc = instance ?: return false
       val h = svc.handler ?: return false

@@ -50,6 +50,13 @@ type BondUsageNative = {
   logBackgroundDiagnostic?(message: string): void;
   /** Which app installed Bond (null = unknown / sideloaded) and the Android version. */
   getInstallSource?(): { installer: string | null; sdkInt: number };
+  /** Backup: restart the background service if it was on and the phone closed it. True = asked Android to start it. */
+  resumeBackgroundService?(): boolean;
+  /** Live Currently Using (optional accessibility service). */
+  getLiveStatus?(): { enabled: boolean; connected: boolean; lastChangeAt: number };
+  openAccessibilitySettings?(): void;
+  /** Android's "Let Bond always run in the background?" question; false = opened the list instead. */
+  requestUnrestrictedBattery?(): boolean;
   /** What Android restricts for Bond in the background (diagnostics only). */
   getBackgroundRestrictions?(): {
     backgroundRestricted: boolean | null;

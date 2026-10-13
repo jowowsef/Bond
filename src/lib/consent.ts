@@ -118,7 +118,8 @@ export function askChoice(request: {
   body: string;
   points?: string[];
   confirmLabel: string;
-  secondaryLabel: string;
+  /** Optional middle choice. */
+  secondaryLabel?: string;
   cancelLabel?: string;
   icon?: ConfirmIcon;
 }): Promise<ConfirmResult> {

@@ -8,7 +8,7 @@ Bond is a private Android app for couples. Two people pair their accounts with a
 - **Location sharing**: your partner sees your latest location on a map. With Android's "Allow all the time", it keeps updating while Bond is closed. Only the latest position is stored.
 - **Battery sharing**: battery level and charging status, with low-battery alerts for your partner.
 - **Screen Time**: daily screen time and top apps, using Android's Usage access. Hourly details and app icons stay on your phone.
-- **Currently Using**: the name of the app open on your phone (never anything inside apps).
+- **Currently Using**: the name of the app open on your phone (never anything inside apps). Optional **Live mode** (Android Accessibility, off by default) shows app switches within a second or two; it only reads the app's name, never the screen.
 - **Shared calendar**: events with reminders and repeat options.
 - **Requests between partners**, for example to unpair or to turn off location sharing.
 - **Accounts** with email and password or Google Sign-In. You can delete your account from Settings.

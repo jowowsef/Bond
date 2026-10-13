@@ -10,6 +10,7 @@ import { useCurrentAppSharing } from '@/hooks/useCurrentAppSharing';
 import { useLocationSharingSwitch } from '@/hooks/useLocationSharingSwitch';
 import { getBackgroundPermission, requestBackgroundPermission, type BackgroundPermission } from '@/lib/backgroundLocation';
 import { isBatteryOptimizedForBond, openBatteryOptimizationSettings } from '@/lib/backgroundJobs';
+import { requestLiveMode, requestUnrestrictedBattery, useLiveStatus } from '@/lib/liveMode';
 import { enableBatterySharing } from '@/lib/battery';
 import { confirmSharing } from '@/lib/consent';
 import { readSharingStep, saveSharingStep, SHARING_STEPS, type SharingStep } from '@/lib/pairingSetup';
@@ -163,6 +164,7 @@ export default function SharingSetup() {
     offerBackground: false, // the Location step explains "Allow all the time" itself
   });
   const currentApp = useCurrentAppSharing(userId, partnerName);
+  const live = useLiveStatus();
 
   // Only during a new pairing's sharing step; otherwise the start screen decides.
   if (phase !== 'loading' && pairingSetup !== 'unknown' && pairingSetup !== 'sharing') return <Redirect href="/" />;
@@ -340,11 +342,12 @@ export default function SharingSetup() {
   } else if (step === 'battery') {
     icon = 'sync';
     title = 'Stay in sync, always';
-    body = `Let Bond run in the background so your battery and screen time stay up to date for ${partnerName}, even when the app is closed.`;
+    body = `Let Bond run in the background so your battery, screen time and the app you use stay up to date for ${partnerName}, even when Bond is closed.`;
     const opt = snap.batteryOptimized;
     checks.push({
-      label: opt === false ? 'Battery: Unrestricted' : opt === true ? 'Battery: Android may pause Bond' : 'Battery: Android didn’t say',
+      label: opt === false ? 'Battery: Bond may always run in the background' : opt === true ? 'Battery: Android may pause Bond' : 'Battery: Android didn’t say',
       ok: opt === null ? null : !opt,
+      hint: opt === true ? 'Without this, Android can stop Bond’s updates for minutes or hours while your phone rests.' : undefined,
     });
     checks.push({
       label: 'Background data',
@@ -363,9 +366,13 @@ export default function SharingSetup() {
     }
     checks.push({ label: `Share my battery with ${partnerName}`, ok: snap.shareBattery });
     if (opt === true) {
+      tip = 'Android will ask "Let Bond always run in the background?". Tap Allow. You can change it later in App info › Battery.';
       action = {
         label: 'Allow background activity',
-        onPress: () => void openBatteryOptimizationSettings(),
+        onPress: () => {
+          // Android's own Allow / Deny question; if this phone doesn't offer it, its battery list.
+          if (!requestUnrestrictedBattery()) void openBatteryOptimizationSettings();
+        },
       };
     } else if (!snap.shareBattery) {
       action = {
@@ -415,6 +422,19 @@ export default function SharingSetup() {
         loading: currentApp.busy,
         onPress: () => currentApp.toggle(true),
       };
+    } else if (live.status === 'off' || live.status === 'closed') {
+      // Part 2 (optional): Live mode, right after Currently Using is on.
+      icon = 'flash';
+      title = 'Make it live (optional)';
+      body =
+        `With Live mode, ${partnerName} sees the app you open within a second or two, instead of minutes later on some phones. ` +
+        'Bond only learns which app came to the front, never what is on your screen, what you type, or anything inside apps.';
+      tip =
+        'Android will show a strong warning ("view and control screen" / "perform actions"). That is expected for every app of this kind: Bond only reads the app’s name, never your screen, and never acts for you.';
+      note = 'Live mode is optional. Turn it off anytime in Accessibility.';
+      action = { label: 'Turn on Live mode', onPress: () => void requestLiveMode(partnerName) };
+    } else if (live.status === 'on') {
+      checks.push({ label: 'Live mode: on', ok: true, hint: `${partnerName} sees app switches within a second or two.` });
     }
   }
 

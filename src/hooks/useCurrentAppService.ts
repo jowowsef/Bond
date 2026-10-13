@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { reconcileBackgroundService } from '@/lib/backgroundService';
+import { logDiagnostic } from '@/lib/currentAppServiceControl';
+import { noteLiveIfClosed } from '@/lib/liveMode';
 import { supabase, uniqueTopic } from '@/lib/supabase';
 
 /**
@@ -25,6 +27,7 @@ export function useCurrentAppService({ userId, partnerName }: { userId: string |
     if (userId === undefined) return; // not known yet: change nothing
     const run = () => {
       if (userId && AppState.currentState !== 'active') return;
+      noteLiveIfClosed(logDiagnostic);
       void reconcileBackgroundService(userId, nameRef.current).catch(() => undefined);
     };
     run();

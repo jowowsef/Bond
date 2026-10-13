@@ -25,6 +25,7 @@ import { useLocationSharingSwitch } from '@/hooks/useLocationSharingSwitch';
 import { askConfirm, confirmSharing, confirmStopSharing } from '@/lib/consent';
 import { possessive } from '@/lib/format';
 import { openLegalPage } from '@/lib/legalLinks';
+import { requestLiveMode, useLiveStatus } from '@/lib/liveMode';
 import { updateDisplayName } from '@/lib/pairing';
 import { removeAvatarPhoto, uploadAvatarPhoto } from '@/lib/profilePhoto';
 import { requestApproval } from '@/lib/requests';
@@ -246,6 +247,7 @@ export default function Settings() {
   const batteryAlertName = knownPartner && knownPartner !== 'Me' ? possessive(knownPartner) : "your partner's";
   const locationOn = !!privacy?.share_location;
   const currentApp = useCurrentAppSharing(paired ? userId : null, partnerName);
+  const live = useLiveStatus();
 
   async function onLogOut() {
     if (loggingOut) return;
@@ -388,6 +390,39 @@ export default function Settings() {
             </View>
           ) : null}
         </Card>
+        {/* Optional Live mode (Android Accessibility): faster Currently Using. */}
+        {live.status !== 'unavailable' ? (
+          <Card style={{ marginTop: spacing.sm }}>
+            <Pressable
+              onPress={() => void requestLiveMode(partnerName)}
+              disabled={live.status === 'on'}
+              accessibilityRole="button"
+              accessibilityLabel={`Live Currently Using, optional: ${live.status === 'on' ? 'on' : live.status === 'closed' ? 'closed by the phone' : 'off'}`}
+            >
+              <InfoRow
+                icon="flash-outline"
+                label="Live Currently Using (optional)"
+                sub={
+                  live.status === 'on'
+                    ? currentApp.switchValue
+                      ? `On. ${partnerName} sees app switches within a second or two. Turn it off in Android Settings › Accessibility.`
+                      : 'On, but nothing is shared while "Share the app I’m using" is off.'
+                    : live.status === 'closed'
+                      ? 'On, but your phone closed it. Tap to see how to bring it back.'
+                      : `Off. Turn it on so ${partnerName} sees the app you open right away, not minutes later. Only the app's name, never what's on your screen.`
+                }
+                right={
+                  <StatusBadge
+                    label={live.status === 'on' ? 'On' : live.status === 'closed' ? 'Closed' : 'Off'}
+                    tone={live.status === 'on' ? 'success' : live.status === 'closed' ? 'warning' : 'neutral'}
+                    dot={live.status === 'on'}
+                  />
+                }
+                last
+              />
+            </Pressable>
+          </Card>
+        ) : null}
         {currentApp.error ? (
           <Text style={[styles.note, { color: colors.danger }]}>
             {currentApp.error}{' '}

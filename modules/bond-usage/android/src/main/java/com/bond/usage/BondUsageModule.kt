@@ -107,6 +107,65 @@ class BondUsageModule : Module() {
     }
 
     /**
+     * Live Currently Using (optional accessibility service):
+     *  - enabled: the person turned it on in Android's Accessibility settings;
+     *  - connected: Android is running it right now (enabled but not
+     *    connected = the phone closed it; it comes back when Android restarts
+     *    it or Bond is opened);
+     *  - lastChangeAt: when it last saw an app switch (ms, 0 = not yet).
+     */
+    Function("getLiveStatus") {
+      val ctx = context
+      mapOf(
+        "enabled" to BondAppWatchService.isEnabled(ctx),
+        "connected" to LiveAppWatch.connected,
+        "lastChangeAt" to LiveAppWatch.changedAt.toDouble(),
+      )
+    }
+
+    /**
+     * Backup from the periodic background job: if the background service was
+     * on and the phone closed it, start it again (only possible when Android
+     * allows it, for example with unrestricted battery use). Never starts
+     * anything that was turned off.
+     */
+    Function("resumeBackgroundService") {
+      CurrentAppService.resumeIfWanted(context, "background job")
+    }
+
+    /** Open Android's Accessibility settings (the person turns Bond on there). */
+    Function("openAccessibilitySettings") {
+      val ctx = context
+      try {
+        ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      } catch (_: Exception) {
+        ctx.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      }
+    }
+
+    /**
+     * Android's own question "Let Bond always run in the background?" (Allow /
+     * Deny); the person decides. Falls back to the battery optimization list.
+     */
+    Function("requestUnrestrictedBattery") {
+      val ctx = context
+      val ask = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+        .setData(Uri.parse("package:${ctx.packageName}"))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      try {
+        ctx.startActivity(ask)
+        true
+      } catch (_: Exception) {
+        try {
+          ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: Exception) {
+          // nothing else to open
+        }
+        false
+      }
+    }
+
+    /**
      * What Android itself restricts for Bond in the background (for the
      * diagnostics screen; read-only, null = this Android version can't say):
      *  - backgroundRestricted: the person chose "Restricted" battery use;

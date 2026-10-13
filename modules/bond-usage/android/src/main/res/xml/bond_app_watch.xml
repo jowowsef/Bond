@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Bond "Live Currently Using" (BondAppWatchService). Only window changes
+  (which app's screen is in front); canRetrieveWindowContent="false", so
+  nothing on the screen can be read. Not an accessibility tool for people
+  with disabilities (isAccessibilityTool="false"); it is the optional, faster
+  way to share the app in use with the partner the person chose.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault"
+    android:canRetrieveWindowContent="false"
+    android:notificationTimeout="300"
+    android:isAccessibilityTool="false"
+    android:description="@string/bond_live_description"
+    android:summary="@string/bond_live_summary" />
