@@ -75,10 +75,16 @@ export function noteLiveIfClosed(log: (message: string) => void): void {
 /** When Bond last opened the Accessibility page in this session (0 = never). */
 let lastOpenedAt = 0;
 
-function openAccessibility(): void {
+/**
+ * First try: Bond's own page in Accessibility (one tap to the switch). If the
+ * person came back and it is still off (for example that page showed
+ * "Restricted setting"), the next tries open the full list instead.
+ */
+function openAccessibility(page: 'auto' | 'list' = 'auto'): void {
+  const details = page === 'auto' && lastOpenedAt === 0;
   lastOpenedAt = Date.now();
   try {
-    BondUsage?.openAccessibilitySettings?.();
+    BondUsage?.openAccessibilitySettings?.(details);
   } catch {
     void Linking.openSettings().catch(() => undefined);
   }
@@ -104,7 +110,7 @@ export async function requestLiveMode(partnerName: string): Promise<void> {
         : 'If Android showed "Restricted setting", it blocks this for Bond until you allow it.',
       points: [
         'Open Bond\'s App info, tap ⋮ (top right), then "Allow restricted settings" and confirm.',
-        'Then open Accessibility again, find Bond in the list (under Installed apps or Downloaded apps) and turn it on.',
+        'Then open Accessibility again: Bond opens the full list this time. Find Bond (under Installed apps or Downloaded apps) and turn it on.',
         'Currently Using keeps working without it, just less often.',
       ],
       confirmLabel: 'Open App info',
@@ -113,7 +119,7 @@ export async function requestLiveMode(partnerName: string): Promise<void> {
       icon: 'alert-circle-outline',
     });
     if (choice === 'confirm') await Linking.openSettings().catch(() => undefined);
-    else if (choice === 'secondary') openAccessibility();
+    else if (choice === 'secondary') openAccessibility('list');
     return;
   }
 
@@ -141,7 +147,7 @@ export async function requestLiveMode(partnerName: string): Promise<void> {
       ...(restricted
         ? ['First: open App info, tap ⋮ (top right), then "Allow restricted settings" and confirm. Android needs this because Bond was installed from a file.']
         : []),
-      'In Accessibility, find Bond in the list (under Installed apps or Downloaded apps) and turn it on.',
+      'Bond opens its own page in Accessibility (or the list: find Bond under Installed apps or Downloaded apps). Turn it on.',
       'Android will ask to allow full control ("view and control screen" / "view and perform actions"). Tap Allow. That warning is expected: Android shows it for every app of this kind. Bond is set up so it can’t read your screen; it only learns the app’s name, and it never performs any actions.',
       'Then come back to Bond: the status changes to On. You can turn it off there anytime.',
     ],

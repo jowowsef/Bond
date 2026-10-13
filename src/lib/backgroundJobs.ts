@@ -12,6 +12,7 @@ import './backgroundLocation';
 // Defines the "Currently Using" task at startup (its native service may start
 // Bond's JavaScript without a screen to deliver an observation).
 import './currentAppService';
+import { maybeSendDailySummary } from './dailySummary';
 import { deliverPendingAlerts } from './partnerAlerts';
 import { syncScreenTime } from './screenTime';
 import { supabase } from './supabase';
@@ -135,7 +136,11 @@ function resumeBackgroundServiceIfClosed(): void {
 // Receiving side of partner alerts: show any low-battery alerts addressed to me.
 defineJob(PARTNER_ALERTS_TASK, async () => {
   const userId = await signedInUserId();
-  if (userId) await deliverPendingAlerts(userId);
+  if (userId) {
+    await deliverPendingAlerts(userId);
+    // The optional daily summary (once each evening, if turned on here).
+    await maybeSendDailySummary(userId).catch(() => 'skipped');
+  }
   return Success;
 });
 

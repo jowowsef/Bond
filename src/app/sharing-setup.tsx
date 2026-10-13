@@ -321,7 +321,7 @@ export default function SharingSetup() {
   if (step === 'notifications') {
     icon = 'notifications-outline';
     title = 'Never miss what matters';
-    body = `Get a notification when ${partnerName}'s battery is low, for shared calendar reminders, or if you are unpaired. Nothing else.`;
+    body = `Get a notification when ${partnerName}'s battery is low, for shared calendar reminders, if you are unpaired, and (only if you turn it on) one daily summary. Nothing else.`;
     note = 'You can turn notifications off anytime.';
     if (snap.notifications !== 'granted') {
       action = {

@@ -31,6 +31,8 @@ import { removeAvatarPhoto, uploadAvatarPhoto } from '@/lib/profilePhoto';
 import { requestApproval } from '@/lib/requests';
 import { getUsageSupport, hasUsageAccess } from '@/lib/screenTime';
 import { readCalendarReminders, setCalendarReminders } from '@/lib/calendar';
+import { readDailySummary, setDailySummary } from '@/lib/dailySummary';
+import { requestNotifications } from '@/lib/setupPermissions';
 import { supabase } from '@/lib/supabase';
 import { requestUsageAccess } from '@/lib/usageAccessFlow';
 import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
@@ -77,6 +79,21 @@ export default function Settings() {
     if (!userId || phase !== 'paired') return;
     void readCalendarReminders(userId).then(setCalReminders);
   }, [userId, phase]);
+  // Optional daily summary of my partner's screen time (on this phone only).
+  const [dailySummary, setDailySummaryState] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!userId || phase !== 'paired') return;
+    void readDailySummary(userId).then(setDailySummaryState);
+  }, [userId, phase]);
+  async function onDailySummary(next: boolean) {
+    if (!userId) return;
+    if (next && (await requestNotifications()) !== 'granted') {
+      Alert.alert('Notifications are off', 'Allow notifications for Bond to get a daily summary.');
+      return;
+    }
+    setDailySummaryState(next);
+    await setDailySummary(userId, next);
+  }
   async function onCalendarReminders(next: boolean) {
     if (!userId) return;
     setCalReminders(next);
@@ -443,6 +460,27 @@ export default function Settings() {
                 sub={calReminders ? 'Notifications for shared events that have a reminder' : 'Off: no reminders on this account'}
                 value={calReminders}
                 onChange={(v) => void onCalendarReminders(v)}
+                last
+              />
+            </Card>
+          </>
+        ) : null}
+
+        {/* Daily summary (optional, this phone only) */}
+        {paired && dailySummary !== null ? (
+          <>
+            <SectionHeader title="Daily summary" />
+            <Card>
+              <SwitchRow
+                icon="moon-outline"
+                label={`${possessive(partnerName)} day`}
+                sub={
+                  dailySummary
+                    ? `One notification at about 9 PM with ${possessive(partnerName)} screen time and top app today (only if ${partnerName} shares screen time).`
+                    : `Off. Turn on for one notification each evening, never one per app.`
+                }
+                value={dailySummary}
+                onChange={(v) => void onDailySummary(v)}
                 last
               />
             </Card>

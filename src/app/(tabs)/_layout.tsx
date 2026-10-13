@@ -12,6 +12,7 @@ import { useLocationWatcher } from '@/hooks/useLocationWatcher';
 import { usePartnerAlerts } from '@/hooks/usePartnerAlerts';
 import { useActivityUnreadTracker } from '@/lib/activityUnread';
 import { registerBackgroundJobs } from '@/lib/backgroundJobs';
+import { maybeSendDailySummary } from '@/lib/dailySummary';
 import { colors, fontFamily, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
@@ -60,6 +61,11 @@ export default function TabsLayout() {
   // (each job still checks pairing, setup and its own sharing setting).
   useEffect(() => {
     if (activeUser) void registerBackgroundJobs();
+  }, [activeUser]);
+  // The optional evening summary also when Bond is opened (it shows once a day).
+  useEffect(() => {
+    if (!activeUser) return;
+    void maybeSendDailySummary(activeUser).catch(() => undefined);
   }, [activeUser]);
 
   // Just unpaired: the app's unpair handler (UnpairWatcher in the root layout)

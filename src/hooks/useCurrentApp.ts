@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import {
@@ -20,7 +21,13 @@ import { supabase, uniqueTopic } from '@/lib/supabase';
  * newer one, and a row is never replaced by one with an older checked_at.
  * Everything resets when the partner changes or the couple ends (partnerId
  * null), so an old partner's app never shows.
+ *
+ * Opening Bond: the last known answer for THIS partner (saved on this phone)
+ * shows at once, with its "checked" time, while the newest is fetched; the
+ * fetched answer then replaces it. Nothing is shown from a cache for anyone
+ * else.
  */
+const cacheKey = (myId: string, partnerId: string) => `bond:partner-current-app:${myId}:${partnerId}`;
 export function usePartnerCurrentApp(
   partnerId: string | null,
   /** My own user id: my row is never shown as the partner's. */
@@ -40,6 +47,8 @@ export function usePartnerCurrentApp(
   partnerRef.current = partnerId;
   const myRef = useRef(myId);
   myRef.current = myId;
+  /** The server answered for the current partner (the saved answer is then not used). */
+  const fresh = useRef(false);
 
   const reload = useCallback(async () => {
     const id = partnerRef.current;
@@ -48,10 +57,12 @@ export function usePartnerCurrentApp(
     const s = await readCurrentAppSetting(id);
     if (mine !== seq.current || partnerRef.current !== id) return; // a newer request is on its way
     if (s.kind === 'error') throw new Error('current app setting failed to load');
+    fresh.current = true;
     setSetting(s);
     if (s.kind !== 'on') {
       setRow(null); // sharing off (or not available): nothing is shown
       setNow(Date.now());
+      if (myRef.current) void AsyncStorage.removeItem(cacheKey(myRef.current, id)).catch(() => undefined);
       return;
     }
     const { data, error } = await supabase.from('current_app').select('*').eq('user_id', id).maybeSingle();
@@ -59,6 +70,9 @@ export function usePartnerCurrentApp(
     if (error) throw error;
     // Only ever the partner's own row (never mine, a previous partner's or another account's).
     const next = partnerRowOnly((data as CurrentAppRow) ?? null, id, myRef.current);
+    if (myRef.current) {
+      void AsyncStorage.setItem(cacheKey(myRef.current, id), JSON.stringify({ setting: s, row: next })).catch(() => undefined);
+    }
     setRow((prev) =>
       prev && next && prev.user_id === next.user_id && new Date(prev.checked_at).getTime() > new Date(next.checked_at).getTime()
         ? prev
@@ -72,6 +86,20 @@ export function usePartnerCurrentApp(
     setSetting(null);
     setRow(null);
     if (!partnerId || partnerId === myId) return;
+    // Show the last known answer at once (only if the server hasn't answered yet).
+    fresh.current = false;
+    if (myId) {
+      void AsyncStorage.getItem(cacheKey(myId, partnerId))
+        .then((raw) => {
+          if (!raw || fresh.current || partnerRef.current !== partnerId) return;
+          const cached = JSON.parse(raw) as { setting: CurrentAppSetting; row: CurrentAppRow | null };
+          if (cached.setting?.kind !== 'on') return;
+          setSetting(cached.setting);
+          setRow(partnerRowOnly(cached.row, partnerId, myId));
+          setNow(Date.now());
+        })
+        .catch(() => undefined);
+    }
     const run = () => void reload().catch(() => {});
     run();
     const channel = supabase

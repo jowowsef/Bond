@@ -1,5 +1,6 @@
 package com.bond.usage
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -16,6 +17,11 @@ import expo.modules.kotlin.modules.ModuleDefinition
  * Android Settings. Bond only checks the real state and opens that screen.
  */
 class BondUsageModule : Module() {
+
+  private companion object {
+    /** Bond's own page inside Accessibility settings (not a public SDK constant). */
+    const val ACCESSIBILITY_DETAILS = "android.settings.ACCESSIBILITY_DETAILS_SETTINGS"
+  }
 
   private val context: Context
     get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
@@ -133,14 +139,38 @@ class BondUsageModule : Module() {
       CurrentAppService.resumeIfWanted(context, "background job")
     }
 
-    /** Open Android's Accessibility settings (the person turns Bond on there). */
-    Function("openAccessibilitySettings") {
+    /**
+     * Open Android's Accessibility settings (the person turns Bond on there).
+     * details = true: Bond's own page in Accessibility when this phone offers
+     * it ("android.settings.ACCESSIBILITY_DETAILS_SETTINGS"); otherwise, or if
+     * it fails, the full list. Returns "details" or "list" (what was opened).
+     */
+    Function("openAccessibilitySettings") { details: Boolean ->
       val ctx = context
+      if (details) {
+        val page = Intent(ACCESSIBILITY_DETAILS)
+          .putExtra(Intent.EXTRA_COMPONENT_NAME, ComponentName(ctx, BondAppWatchService::class.java).flattenToString())
+          .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val canOpen = try {
+          page.resolveActivity(ctx.packageManager) != null
+        } catch (_: Exception) {
+          false
+        }
+        if (canOpen) {
+          try {
+            ctx.startActivity(page)
+            return@Function "details"
+          } catch (_: Exception) {
+            // fall back to the list
+          }
+        }
+      }
       try {
         ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
       } catch (_: Exception) {
         ctx.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
       }
+      "list"
     }
 
     /**
