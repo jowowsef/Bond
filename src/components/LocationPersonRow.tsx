@@ -4,6 +4,7 @@ import { ProfileAvatar } from './ProfileAvatar';
 import type { LocationStatusKind, PersonLocation } from '@/hooks/useCoupleLocations';
 import { colors, font, spacing, themed, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
+import { shownName } from '@/lib/format';
 
 /**
  * One person's line in a location panel: avatar, name, and a single status
@@ -35,7 +36,7 @@ export function LocationPersonRow({
   useThemeVersion();
   const { myProfile, partnerProfile } = useCouple();
   const profile = who === 'me' ? myProfile : partnerProfile;
-  const name = who === 'me' ? 'You' : profile?.display_name ?? 'Partner';
+  const name = who === 'me' ? 'You' : shownName(profile?.display_name, 'Partner');
 
   const status = sub ?? statusLine(person);
 

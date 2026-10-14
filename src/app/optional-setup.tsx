@@ -22,6 +22,7 @@ import { getNotificationState, openAppSettings, requestNotifications } from '@/l
 import { supabase } from '@/lib/supabase';
 import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
+import { shownName } from '@/lib/format';
 
 /**
  * DEVICE PERMISSIONS (Settings > Permissions > Device permissions).
@@ -51,7 +52,7 @@ export default function OptionalSetup() {
   const { from } = useLocalSearchParams<{ from?: string }>();
   const fromSettings = from === 'settings';
   const { phase, userId, refresh, partnerProfile, advancePairingSetup, ensurePairingReset, pairingSetup } = useCouple();
-  const partnerName = partnerProfile?.display_name ?? 'Your partner';
+  const partnerName = shownName(partnerProfile?.display_name, 'Your partner');
 
   const [battery, setBattery] = useState<ItemState>('not_set_up');
   const [background, setBackground] = useState<ItemState>('not_set_up');

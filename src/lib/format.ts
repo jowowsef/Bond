@@ -1,5 +1,22 @@
 // Small helpers for showing numbers and times nicely.
 
+/**
+ * A person's name as Bond shows it. A new account is called "Me" on the
+ * server until its owner picks a name ("Make it yours"), so "Me" (or no name)
+ * is never shown as a name: the fallback is used instead.
+ */
+export function shownName(name: string | null | undefined, fallback: string): string {
+  const n = name?.trim();
+  return n && n !== 'Me' ? n : fallback;
+}
+
+/** Has this person picked their name and color yet? (false = still setting up) */
+export function profileReady(profile: { display_name?: string | null; avatar_color?: string | null } | null | undefined): boolean {
+  if (!profile) return false;
+  const n = profile.display_name?.trim();
+  return !!n && n !== 'Me' && (profile.avatar_color === 'blue' || profile.avatar_color === 'pink');
+}
+
 /** 12_240_000 → "3h 24m",  300_000 → "5m",  20_000 → "<1m" */
 export function formatDuration(ms: number | null | undefined): string {
   if (!ms || ms < 60_000) return ms && ms > 0 ? '<1m' : '0m';

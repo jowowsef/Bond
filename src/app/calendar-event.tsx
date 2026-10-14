@@ -11,6 +11,7 @@ import { eventTimeText, formatLongDate, REMINDER_LABELS, REPEAT_LABELS } from '@
 import { askChoice, askConfirm } from '@/lib/consent';
 import { colors, font, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
+import { shownName } from '@/lib/format';
 
 /**
  * EVENT DETAILS: /calendar-event?id=...&date=YYYY-MM-DD (the occurrence that
@@ -23,7 +24,7 @@ export default function CalendarEventScreen() {
   const router = useRouter();
   const { id, date } = useLocalSearchParams<{ id: string; date?: string }>();
   const { userId, partnerProfile } = useCouple();
-  const partnerName = partnerProfile?.display_name ?? 'Your partner';
+  const partnerName = shownName(partnerProfile?.display_name, 'Your partner');
   const [event, setEvent] = useState<CalendarEvent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

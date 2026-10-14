@@ -12,7 +12,7 @@ import { useMyUsage } from '@/hooks/useMyUsage';
 import { PARTNER_STALE_MS, usePartnerUsage } from '@/hooks/usePartnerUsage';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { askConfirm } from '@/lib/consent';
-import { dayKey, formatDuration, formatTime, startOfDay, timeAgo } from '@/lib/format';
+import { dayKey, formatDuration, formatTime, startOfDay, timeAgo, shownName } from '@/lib/format';
 import { requestUsageAccess } from '@/lib/usageAccessFlow';
 import { mostUsedToday, partnerRowsForDay, recentlyUsedToday, type UsageRow } from '@/lib/screenTimeToday';
 import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
@@ -46,7 +46,7 @@ export default function ScreenTimeStats() {
   const { who } = useLocalSearchParams<{ who?: string }>();
   const forPartner = who === 'partner';
   const { partnerId, partnerProfile } = useCouple();
-  const partnerName = partnerProfile?.display_name ?? 'Your partner';
+  const partnerName = shownName(partnerProfile?.display_name, 'Your partner');
 
   // Today, as this phone's local date (recomputed on every render, so it moves
   // on after midnight).

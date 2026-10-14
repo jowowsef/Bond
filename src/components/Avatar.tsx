@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { initials } from '@/lib/format';
@@ -30,21 +31,28 @@ export function Avatar({
     setFailed(false);
   }, [url]);
 
+  const unnamed = !name || name.trim() === '' || name.trim() === 'Me';
   const ringStyle = ring ? { borderWidth: 2, borderColor: ring } : null;
   const base = { width: size, height: size, borderRadius: size / 2 };
 
   return (
     <View style={[base, styles.fallback, { backgroundColor: tint ?? colors.primarySoft }, ringStyle]}>
-      <Text
-        style={{
-          fontFamily,
-          fontWeight: '700',
-          fontSize: size * 0.38,
-          color: tint ? colors.text : colors.primary,
-        }}
-      >
-        {initials(name)}
-      </Text>
+      {unnamed ? (
+        // Not named yet (a new account is "Me" until its owner picks a name).
+        <Ionicons name="person" size={size * 0.42} color={tint ? INK : colors.primary} />
+      ) : (
+        <Text
+          style={{
+            fontFamily,
+            fontWeight: '700',
+            fontSize: size * 0.38,
+            // Dark ink on the pastel avatar colors, in light and dark mode alike.
+            color: tint ? INK : colors.primary,
+          }}
+        >
+          {initials(name)}
+        </Text>
+      )}
       {url && !failed ? (
         <Image
           source={{ uri: url }}
@@ -55,6 +63,9 @@ export function Avatar({
     </View>
   );
 }
+
+/** Initials on the pastel avatar colors stay dark, so they read well in dark mode too. */
+const INK = '#1F2A44';
 
 const styles = StyleSheet.create({
   fallback: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },

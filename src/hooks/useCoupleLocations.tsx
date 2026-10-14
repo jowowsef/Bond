@@ -10,7 +10,7 @@ import React, {
 } from 'react';
 import type { MapMarker } from '@/components/PartnerMap';
 import { avatarTint, tintForProfile } from '@/lib/avatar';
-import { timeAgo } from '@/lib/format';
+import { timeAgo, shownName } from '@/lib/format';
 import {
   distanceMeters,
   getLocationDiagnostics,
@@ -288,7 +288,7 @@ export function CoupleLocationsProvider({ children }: { children: React.ReactNod
         lat: partner.loc.latitude,
         lng: partner.loc.longitude,
         color: pinColor(partnerProfile, colors.partner),
-        name: partnerProfile?.display_name ?? 'Partner',
+        name: shownName(partnerProfile?.display_name, 'Partner'),
         photoUrl: partnerProfile?.avatar_path ? partnerAvatarUrl : null,
         tint: tintForProfile(partnerProfile),
         accuracyM: partner.accuracyM,

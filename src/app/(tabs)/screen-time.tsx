@@ -11,7 +11,7 @@ import { useMyUsage } from '@/hooks/useMyUsage';
 import { PARTNER_STALE_MS, usePartnerUsage } from '@/hooks/usePartnerUsage';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { dailyAverage, useWeekUsage } from '@/hooks/useWeekUsage';
-import { dayKey, formatDuration, timeAgo } from '@/lib/format';
+import { dayKey, formatDuration, timeAgo, shownName } from '@/lib/format';
 import { getLastScreenTimeSync, syncScreenTime } from '@/lib/screenTime';
 import { requestUsageAccess } from '@/lib/usageAccessFlow';
 import { supabase } from '@/lib/supabase';
@@ -36,7 +36,7 @@ export default function ScreenTimeTab() {
   useThemeVersion();
   const router = useRouter();
   const { userId, partnerId, partnerProfile } = useCouple();
-  const partnerName = partnerProfile?.display_name ?? 'Your partner';
+  const partnerName = shownName(partnerProfile?.display_name, 'Your partner');
 
   const { state: mine, reload: reloadMine } = useMyUsage();
   const partner = usePartnerUsage(partnerId, dayKey());

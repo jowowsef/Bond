@@ -9,7 +9,7 @@ import { Card } from '@/components/Card';
 import { activityMessage, activityTitle, activityVisual, useActivityFeed } from '@/hooks/useActivityFeed';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { getActivitySeenAt, markActivitySeen } from '@/lib/activityUnread';
-import { formatDayHeading, formatTime, startOfDay } from '@/lib/format';
+import { formatDayHeading, formatTime, startOfDay, shownName } from '@/lib/format';
 import { colors, font, radius, spacing, themed, themedStyles, useThemeVersion } from '@/lib/theme';
 import type { ActivityLog } from '@/lib/types';
 import { useCouple } from '@/state/couple';
@@ -35,7 +35,7 @@ export default function Activity() {
   useThemeVersion();
   const { logs, loading, error, reload } = useActivityFeed(50);
   const { userId, myProfile, partnerProfile } = useCouple();
-  const names = { myName: myProfile?.display_name, partnerName: partnerProfile?.display_name, myUserId: userId };
+  const names = { myName: myProfile?.display_name, partnerName: shownName(partnerProfile?.display_name, 'Your partner'), myUserId: userId };
   const { refreshing, onRefresh } = usePullToRefresh(reload);
 
   // "New" = after the previous visit; captured before this visit marks all seen.

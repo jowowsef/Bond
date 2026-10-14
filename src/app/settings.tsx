@@ -23,7 +23,7 @@ import { disableBatterySharing, enableBatterySharing } from '@/lib/battery';
 import { currentAppStatusText, useCurrentAppSharing, type CurrentAppStatus } from '@/hooks/useCurrentAppSharing';
 import { useLocationSharingSwitch } from '@/hooks/useLocationSharingSwitch';
 import { askConfirm, confirmSharing, confirmStopSharing } from '@/lib/consent';
-import { possessive } from '@/lib/format';
+import { possessive, shownName } from '@/lib/format';
 import { openLegalPage } from '@/lib/legalLinks';
 import { requestLiveMode, useLiveStatus } from '@/lib/liveMode';
 import { updateDisplayName } from '@/lib/pairing';
@@ -258,7 +258,7 @@ export default function Settings() {
     return { ok: true };
   }
 
-  const partnerName = partnerProfile?.display_name ?? 'Your partner';
+  const partnerName = shownName(partnerProfile?.display_name, 'Your partner');
   // "Denize's" (or "your partner's" when the name isn't known yet).
   const knownPartner = partnerProfile?.display_name?.trim();
   const batteryAlertName = knownPartner && knownPartner !== 'Me' ? possessive(knownPartner) : "your partner's";
@@ -368,7 +368,7 @@ export default function Settings() {
         {/* Couple */}
         <SectionHeader title="Couple" />
         <Card>
-          <Row icon="heart-outline" label="Partner" value={partnerProfile?.display_name ?? '—'} last />
+          <Row icon="heart-outline" label="Partner" value={shownName(partnerProfile?.display_name, 'Still setting up')} last />
         </Card>
 
         {/* Currently Using: its own section, easy to find */}

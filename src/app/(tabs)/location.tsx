@@ -15,7 +15,7 @@ import { usePartnerBattery } from '@/hooks/useBattery';
 import { useCoupleLocations } from '@/hooks/useCoupleLocations';
 import { useLocationSharingSwitch } from '@/hooks/useLocationSharingSwitch';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
-import { timeAgo } from '@/lib/format';
+import { timeAgo, shownName } from '@/lib/format';
 import { distanceMeters } from '@/lib/location';
 import {
   askToTurnOnLocationServices,
@@ -55,7 +55,7 @@ export default function LocationScreen() {
   useThemeVersion();
   const router = useRouter();
   const { userId, couple, partnerId, partnerProfile, partnerAvatarUrl, refresh } = useCouple();
-  const partnerName = partnerProfile?.display_name ?? 'Partner';
+  const partnerName = shownName(partnerProfile?.display_name, 'Your partner');
   const coupleId = couple?.id ?? null;
   const { battery: partnerBattery } = usePartnerBattery(partnerId);
 

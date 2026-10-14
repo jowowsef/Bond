@@ -36,36 +36,40 @@ const light = {
   dangerSoft: '#FCE9EC',
 };
 
-/** Same names, tuned for dark backgrounds; the brand sky blue and blush pink stay. */
+/**
+ * Same names, tuned for dark backgrounds: AMOLED black (true #000 background,
+ * near-black cards), so OLED screens use less power. The brand sky blue and
+ * blush pink stay.
+ */
 const dark: typeof light = {
-  background: '#0F141C',
-  card: '#181F2A',
-  text: '#E9EDF5',
+  background: '#000000',
+  card: '#0E0F12',
+  text: '#F2F4F8',
   subtext: '#A7B0C4',
-  muted: '#7D879D',
-  border: '#283142',
-  track: '#222B39',
+  muted: '#7A8296',
+  border: '#1F2228',
+  track: '#1A1C21',
 
   primary: '#8DB4F0',      // brand sky blue is readable on dark
-  primarySoft: '#1E2B42',
-  onPrimary: '#0F141C',    // dark text on the light blue button (white would be too faint)
+  primarySoft: '#15203A',
+  onPrimary: '#000000',    // dark text on the light blue button (white would be too faint)
 
   me: '#8DB4F0',
-  meSoft: '#1C283B',
+  meSoft: '#121C2C',
   partner: '#F5A3B7',
-  partnerSoft: '#3A2330',
+  partnerSoft: '#2A1720',
 
   blue: '#8DB4F0',
-  blueSoft: '#1E2B42',
+  blueSoft: '#15203A',
   pink: '#F5A3B7',
-  pinkSoft: '#3A2330',
+  pinkSoft: '#2A1720',
 
   success: '#4CC38A',
-  successSoft: '#15301F',
+  successSoft: '#0E2417',
   warning: '#E5A84B',
-  warningSoft: '#33270F',
+  warningSoft: '#261C0A',
   danger: '#F2788C',
-  dangerSoft: '#3A1A22',
+  dangerSoft: '#2A1218',
 };
 
 // ---------------- Theme choice ----------------

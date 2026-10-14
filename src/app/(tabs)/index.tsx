@@ -21,7 +21,7 @@ import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { tintForProfile } from '@/lib/avatar';
 import { syncBatteryIfSharing } from '@/lib/battery';
 import { syncCurrentAppIfSharing } from '@/lib/currentApp';
-import { dayKey, greeting, timeAgo } from '@/lib/format';
+import { dayKey, greeting, profileReady, timeAgo, shownName } from '@/lib/format';
 import { colors, font, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
@@ -75,10 +75,10 @@ export default function Home() {
         if (AppState.currentState !== 'active') return;
         tick += 1;
         const r = reloadersRef.current;
-        void r.app().catch(() => {}); // every 10 s: the partner's app, even if the live update dropped
-        if (tick % 6 === 0) void r.battery().catch(() => {}); // every minute
-        if (tick % 12 === 0) void r.usage().catch(() => {}); // every 2 minutes
-      }, 10_000);
+        void r.app().catch(() => {}); // every 30 s
+        if (tick % 2 === 0) void r.battery().catch(() => {}); // every minute
+        if (tick % 4 === 0) void r.usage().catch(() => {}); // every 2 minutes
+      }, 30_000);
       return () => clearInterval(t);
     }, []),
   );
@@ -105,7 +105,7 @@ export default function Home() {
   });
 
   const myName = myProfile?.display_name ?? 'You';
-  const partnerName = partnerProfile?.display_name ?? 'Partner';
+  const partnerName = shownName(partnerProfile?.display_name, 'Your partner');
 
   async function onRequestDone() {
     await Promise.all([refreshRequests(), refresh()]);
@@ -134,34 +134,53 @@ export default function Home() {
         {/* The two of you, and how long you've been together on Bond. */}
         <Card style={styles.couple}>
           <CoupleAvatars
-            me={{ name: myName, url: myAvatarUrl, tint: tintForProfile(myProfile) }}
-            partner={partnerId ? { name: partnerName, url: partnerAvatarUrl, tint: tintForProfile(partnerProfile) } : null}
-            size={64}
+            me={{
+              name: myName,
+              url: myAvatarUrl,
+              tint: tintForProfile(myProfile),
+              label: 'You',
+              sub: myBattery.level > 0 ? `${myBattery.level}%${myBattery.charging ? ' · charging' : ''}` : null,
+            }}
+            partner={
+              partnerId
+                ? {
+                    name: partnerProfile?.display_name,
+                    url: partnerAvatarUrl,
+                    tint: tintForProfile(partnerProfile),
+                    label: partnerName,
+                    sub:
+                      partnerBattery && partnerBattery.level != null && partnerBattery.level > 0
+                        ? `${partnerBattery.level}%${partnerBattery.is_charging ? ' · charging' : ''}${partnerBatteryStale ? ' · old' : ''}`
+                        : partnerBatterySharing
+                          ? 'Battery: waiting'
+                          : 'Battery not shared',
+                  }
+                : null
+            }
+            size={60}
           />
-          <View style={styles.people}>
-            <Person
-              name="You"
-              battery={myBattery.level > 0 ? `${myBattery.level}%${myBattery.charging ? ' · charging' : ''}` : null}
-            />
-            <Person
-              name={partnerName}
-              battery={
-                partnerBattery && partnerBattery.level != null && partnerBattery.level > 0
-                  ? `${partnerBattery.level}%${partnerBattery.is_charging ? ' · charging' : ''}${partnerBatteryStale ? ' · old' : ''}`
-                  : partnerBatterySharing
-                    ? 'Battery: waiting'
-                    : 'Battery not shared'
-              }
-            />
-          </View>
           {since ? (
             <View style={styles.together}>
-              <Text style={styles.togetherNumber}>{since.days === 0 ? 'Day 1' : `${since.days} ${since.days === 1 ? 'day' : 'days'}`}</Text>
-              <Text style={styles.togetherLabel}>together on Bond</Text>
-              <Text style={styles.togetherSince}>Since {since.label}</Text>
+              <Ionicons name="heart" size={14} color={colors.pink} />
+              <Text style={styles.togetherText}>
+                <Text style={styles.togetherStrong}>
+                  {since.days === 0 ? 'Day 1' : `${since.days} ${since.days === 1 ? 'day' : 'days'}`}
+                </Text>{' '}
+                together · since {since.label}
+              </Text>
             </View>
           ) : null}
         </Card>
+
+        {/* The partner hasn't picked their name and color yet (shows until they do). */}
+        {partnerId && partnerProfile && !profileReady(partnerProfile) ? (
+          <Card style={styles.settingUp}>
+            <Ionicons name="sparkles-outline" size={18} color={colors.primary} />
+            <Text style={styles.settingUpText}>
+              Your partner is still setting up. Their name and color will show here when they&apos;re done.
+            </Text>
+          </Card>
+        ) : null}
 
         {/* What the partner is using (their phone's latest check). */}
         <CurrentlyUsingCard
@@ -242,38 +261,22 @@ export default function Home() {
   );
 }
 
-function Person({ name, battery }: { name: string; battery: string | null }) {
-  useThemeVersion();
-  return (
-    <View style={styles.person}>
-      <Text style={styles.personName} numberOfLines={1}>
-        {name}
-      </Text>
-      {battery ? (
-        <Text style={styles.personSub} numberOfLines={1}>
-          {battery}
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
 const styles = themedStyles(() => ({
   couple: { marginTop: spacing.md, paddingVertical: spacing.lg },
-  people: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.sm },
-  person: { width: '42%', alignItems: 'center' },
-  personName: { ...font.h3, color: colors.text },
-  personSub: { ...font.tiny, color: colors.subtext, marginTop: 2, letterSpacing: 0, textAlign: 'center' },
   together: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
     alignItems: 'center',
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  togetherNumber: { ...font.number, fontSize: 28, color: colors.text },
-  togetherLabel: { ...font.small, color: colors.subtext },
-  togetherSince: { ...font.tiny, color: colors.muted, marginTop: spacing.xs, letterSpacing: 0 },
+  togetherText: { ...font.small, color: colors.subtext },
+  togetherStrong: { fontWeight: '700', color: colors.text },
+  settingUp: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md, backgroundColor: colors.primarySoft, borderColor: colors.primarySoft },
+  settingUpText: { ...font.small, color: colors.text, flex: 1, lineHeight: 18 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   greeting: { ...font.small, color: colors.subtext, marginBottom: 2 },
   title: { ...font.title, color: colors.text, marginTop: 2 },

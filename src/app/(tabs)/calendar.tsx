@@ -28,6 +28,7 @@ import {
 import { tintForProfile } from '@/lib/avatar';
 import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
+import { shownName } from '@/lib/format';
 
 /**
  * CALENDAR tab: the couple's shared calendar (both partners see and change
@@ -38,7 +39,7 @@ export default function CalendarTab() {
   useThemeVersion();
   const router = useRouter();
   const { couple, userId, myProfile, partnerProfile } = useCouple();
-  const partnerName = partnerProfile?.display_name ?? 'Your partner';
+  const partnerName = shownName(partnerProfile?.display_name, 'Your partner');
   const { events, cancelled, loading, error, reload } = useCalendar(couple?.id ?? null);
   const { refreshing, onRefresh } = usePullToRefresh(reload);
 

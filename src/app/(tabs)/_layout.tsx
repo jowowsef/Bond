@@ -16,6 +16,7 @@ import { registerBackgroundJobs } from '@/lib/backgroundJobs';
 import { maybeSendDailySummary } from '@/lib/dailySummary';
 import { colors, shadow, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
+import { shownName } from '@/lib/format';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -29,7 +30,7 @@ type IconName = React.ComponentProps<typeof Ionicons>['name'];
 export default function TabsLayout() {
   useThemeVersion();
   const { phase, userId, pairingSetup, partnerProfile, session, unpairState } = useCouple();
-  const partnerName = partnerProfile?.display_name ?? 'Your partner';
+  const partnerName = shownName(partnerProfile?.display_name, 'Your partner');
   const insets = useSafeAreaInsets();
   // Nothing is sent from the main app until this couple is fully paired and
   // its setup is finished (the hooks below get no user id otherwise).
@@ -89,16 +90,16 @@ export default function TabsLayout() {
     const Icon = ({ focused }: { focused: boolean }) => (
       <View
         style={{
-          width: 44,
-          height: 44,
-          borderRadius: 14,
+          width: 36,
+          height: 36,
+          borderRadius: 11,
           alignItems: 'center',
           justifyContent: 'center',
           backgroundColor: focused ? colors.primary : 'transparent',
         }}
         accessibilityLabel={label}
       >
-        <Ionicons name={name} size={21} color={focused ? '#fff' : colors.muted} />
+        <Ionicons name={name} size={18} color={focused ? colors.onPrimary : colors.muted} />
       </View>
     );
     return Icon;
@@ -113,21 +114,21 @@ export default function TabsLayout() {
           backgroundColor: colors.background,
           borderTopWidth: 0,
           elevation: 0,
-          height: 64 + bottomPad + 8,
-          paddingTop: 8 + 10,
-          paddingBottom: bottomPad + 10,
-          paddingHorizontal: 32,
+          height: 52 + bottomPad + 6,
+          paddingTop: 6 + 8,
+          paddingBottom: bottomPad + 8,
+          paddingHorizontal: 64,
         },
         tabBarBackground: () => (
           <View style={{ flex: 1, backgroundColor: colors.background }}>
             <View
               style={{
                 position: 'absolute',
-                left: 20,
-                right: 20,
-                top: 8,
-                height: 64,
-                borderRadius: 32,
+                left: 48,
+                right: 48,
+                top: 6,
+                height: 52,
+                borderRadius: 26,
                 backgroundColor: colors.card,
                 ...shadow,
                 elevation: 6,
@@ -135,7 +136,7 @@ export default function TabsLayout() {
             />
           </View>
         ),
-        tabBarItemStyle: { height: 44, alignItems: 'center', justifyContent: 'center' },
+        tabBarItemStyle: { height: 36, alignItems: 'center', justifyContent: 'center' },
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: tabIcon('home-outline', 'Home') }} />
