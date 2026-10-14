@@ -55,6 +55,7 @@ import { openAppSettings } from '@/lib/setupPermissions';
 import { colors, font, radius, shadow, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 import { OfflineNote } from '@/components/OfflineNote';
+import { HEADER_SIDE, HEADER_TOP, HeaderBar } from '@/components/HeaderBar';
 
 /**
  * LOCATION, map first and consent based.
@@ -228,17 +229,11 @@ export default function LocationScreen() {
         {renderOverlay()}
       </View>
 
-      {/* Top: title and the usual header buttons, floating over the map. */}
-      <View style={[styles.topBar, { top: insets.top + spacing.sm }]} pointerEvents="box-none">
-        <View>
-          <View style={styles.titleChip}>
-            <Text style={styles.titleText}>Location</Text>
-          </View>
-          <OfflineNote style={{ marginTop: spacing.sm, marginBottom: 0, backgroundColor: colors.card }} />
-        </View>
-        <View style={styles.actionsChip}>
-          <HeaderActions />
-        </View>
+      {/* Top: the same header row as every other tab (same place, same title
+          style, same bell and gear), floating over the map. */}
+      <View style={[styles.topBar, { top: insets.top + HEADER_TOP }]} pointerEvents="box-none">
+        <HeaderBar left={<Text style={styles.titleText}>Location</Text>} right={<HeaderActions />} />
+        <OfflineNote style={{ alignSelf: 'flex-start', marginTop: 0, marginBottom: 0, backgroundColor: colors.card }} />
       </View>
 
       {/* Recenter: frame both of you again. Sits just above the sheet. */}
@@ -443,8 +438,8 @@ export default function LocationScreen() {
         ref={mapRef}
         markers={markers}
         mode="full"
-        insets={{ top: insets.top + 64, bottom: SHEET_MIN + 24 }}
-        attributionPosition={{ top: insets.top + 64, right: 14 }}
+        insets={{ top: insets.top + HEADER_TOP + 64, bottom: SHEET_MIN + 24 }}
+        attributionPosition={{ top: insets.top + HEADER_TOP + 64, right: 14 }}
       />
     ) : null;
   }
@@ -659,10 +654,9 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: MAP_BACKGROUND },
   mapFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: MAP_BACKGROUND },
-  topBar: { position: 'absolute', left: spacing.lg, right: spacing.lg, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  titleChip: { backgroundColor: colors.card, borderRadius: radius.pill, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, ...shadow, elevation: 4 },
-  titleText: { ...font.h3, color: colors.text },
-  actionsChip: { backgroundColor: colors.card, borderRadius: radius.pill, padding: 4, ...shadow, elevation: 4 },
+  topBar: { position: 'absolute', left: HEADER_SIDE, right: HEADER_SIDE },
+  // Same as every tab's title (HeaderTitle), with a soft shadow so it reads on the map.
+  titleText: { ...font.title, color: colors.text, textShadowColor: colors.background, textShadowRadius: 8, textShadowOffset: { width: 0, height: 0 } },
   recenterWrap: { position: 'absolute', right: spacing.lg },
   roundBtn: {
     width: 44,

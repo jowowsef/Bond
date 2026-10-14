@@ -1,6 +1,7 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider, router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
+import * as SystemUI from 'expo-system-ui';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useMemo, useRef } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -49,6 +50,11 @@ export default function RootLayout() {
   const themeVersion = useThemeVersion();
   const dark = isDarkTheme();
   const navTheme = useMemo(() => navigationTheme(dark), [dark, themeVersion]);
+  // The window behind every screen (seen during transitions and at startup)
+  // takes the theme's background instead of Android's default white.
+  useEffect(() => {
+    void SystemUI.setBackgroundColorAsync(colors.background).catch(() => undefined);
+  }, [dark, themeVersion]);
   return (
     <SafeAreaProvider>
       <ThemeProvider value={navTheme}>
@@ -58,7 +64,17 @@ export default function RootLayout() {
         <CoupleLocationsProvider>
           <StatusBar style={dark ? 'light' : 'dark'} />
           <SplashGate>
-            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: colors.background },
+                // One smooth slide for every pushed screen and back; the screen
+                // underneath keeps the theme color (never a white frame).
+                animation: 'slide_from_right',
+                animationDuration: 260,
+                gestureEnabled: true,
+              }}
+            >
               {/* Startup + onboarding chain: no slide/gray, feels instant. */}
               <Stack.Screen name="index" options={{ animation: 'none' }} />
               <Stack.Screen name="welcome" options={{ animation: 'none' }} />
@@ -208,11 +224,13 @@ function NotificationTapHandler() {
       const id = r.notification.request.identifier;
       const data = (r.notification.request.content.data ?? {}) as { kind?: string; alertId?: string };
       const kind = data.kind;
-      if (handled.current === id || (kind !== 'battery_low' && kind !== 'unpaired' && kind !== 'calendar_reminder')) return;
+      if (handled.current === id || (kind !== 'battery_low' && kind !== 'unpaired' && kind !== 'calendar_reminder' && kind !== 'daily_summary')) return;
       handled.current = id;
       try {
         if (router.canDismiss()) router.dismissAll();
         router.replace('/');
+        // Battery alerts and the daily summary: straight to Notifications.
+        if (kind === 'battery_low' || kind === 'daily_summary') setTimeout(() => router.push('/activity'), 400);
       } catch {
         // navigation not ready yet: Bond opens on its start screen anyway
       }

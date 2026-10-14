@@ -9,6 +9,7 @@ import { Card } from '@/components/Card';
 import { activityMessage, activityTitle, activityVisual, useActivityFeed } from '@/hooks/useActivityFeed';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { getActivitySeenAt, markActivitySeen } from '@/lib/activityUnread';
+import { readInbox, type InboxItem } from '@/lib/notifications';
 import { formatDayHeading, formatTime, startOfDay, shownName } from '@/lib/format';
 import { colors, font, radius, spacing, themed, themedStyles, useThemeVersion } from '@/lib/theme';
 import type { ActivityLog } from '@/lib/types';
@@ -36,7 +37,14 @@ export default function Activity() {
   const { logs, loading, error, reload } = useActivityFeed(50);
   const { userId, myProfile, partnerProfile } = useCouple();
   const names = { myName: myProfile?.display_name, partnerName: shownName(partnerProfile?.display_name, 'Your partner'), myUserId: userId };
-  const { refreshing, onRefresh } = usePullToRefresh(reload);
+  // Notifications Bond showed on this phone (low battery, reminders, daily summary).
+  const [inbox, setInbox] = useState<InboxItem[]>([]);
+  const loadInbox = useCallback(() => void readInbox().then(setInbox), []);
+  useFocusEffect(loadInbox);
+  const { refreshing, onRefresh } = usePullToRefresh(async () => {
+    loadInbox();
+    await reload();
+  });
 
   // "New" = after the previous visit; captured before this visit marks all seen.
   const [previousSeenAt] = useState(() => getActivitySeenAt());
@@ -51,16 +59,22 @@ export default function Activity() {
     if (logs.length > 0) markActivitySeen();
   }, [logs]);
 
+  // Both kinds in one timeline, newest first, grouped by day.
+  type Entry = { at: number; log?: ActivityLog; note?: InboxItem };
   const groups = useMemo(() => {
-    const out: { key: number; heading: string; items: ActivityLog[] }[] = [];
-    for (const log of logs) {
-      const key = startOfDay(new Date(log.created_at)).getTime();
+    const entries: Entry[] = [
+      ...logs.map((log) => ({ at: new Date(log.created_at).getTime(), log })),
+      ...inbox.map((note) => ({ at: note.at, note })),
+    ].sort((a, b) => b.at - a.at);
+    const out: { key: number; heading: string; items: Entry[] }[] = [];
+    for (const e of entries) {
+      const key = startOfDay(new Date(e.at)).getTime();
       const last = out[out.length - 1];
-      if (last && last.key === key) last.items.push(log);
-      else out.push({ key, heading: formatDayHeading(log.created_at), items: [log] });
+      if (last && last.key === key) last.items.push(e);
+      else out.push({ key, heading: formatDayHeading(new Date(e.at).toISOString()), items: [e] });
     }
     return out;
-  }, [logs]);
+  }, [logs, inbox]);
 
   const isNew = (log: ActivityLog) =>
     previousSeenAt != null && log.actor_id !== userId && new Date(log.created_at).getTime() > previousSeenAt;
@@ -86,7 +100,7 @@ export default function Activity() {
             <Text style={styles.stateText}>Check your connection, then pull down or try again.</Text>
             <Button label="Try again" small variant="secondary" onPress={onRefresh} style={{ marginTop: spacing.sm }} />
           </Card>
-        ) : logs.length === 0 ? (
+        ) : logs.length === 0 && inbox.length === 0 ? (
           <Card style={styles.stateCard}>
             <Ionicons name="notifications-outline" size={28} color={colors.muted} />
             <Text style={styles.stateTitle}>No notifications yet</Text>
@@ -99,9 +113,13 @@ export default function Activity() {
               <View key={g.key} style={styles.group}>
                 <Text style={styles.groupHeading}>{g.heading}</Text>
                 <View style={styles.items}>
-                  {g.items.map((log) => (
-                    <ActivityItem key={log.id} log={log} names={names} unread={isNew(log)} />
-                  ))}
+                  {g.items.map((e) =>
+                    e.log ? (
+                      <ActivityItem key={e.log.id} log={e.log} names={names} unread={isNew(e.log)} />
+                    ) : e.note ? (
+                      <NoteItem key={`n-${e.note.id}`} note={e.note} unread={previousSeenAt != null && e.note.at > previousSeenAt} />
+                    ) : null,
+                  )}
                 </View>
               </View>
             ))}
@@ -109,6 +127,34 @@ export default function Activity() {
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+/** A notification Bond showed on this phone (same look as the activity rows). */
+function NoteItem({ note, unread }: { note: InboxItem; unread: boolean }) {
+  useThemeVersion();
+  const icon: React.ComponentProps<typeof Ionicons>['name'] =
+    note.kind === 'battery_low' ? 'battery-dead-outline' : note.kind === 'calendar_reminder' ? 'calendar-outline' : note.kind === 'daily_summary' ? 'moon-outline' : 'notifications-outline';
+  const tone = note.kind === 'battery_low' ? TONE.warning : TONE.primary;
+  const time = formatTime(new Date(note.at).toISOString());
+  return (
+    <Card style={styles.item}>
+      <View style={styles.itemRow} accessible accessibilityLabel={`${unread ? 'New. ' : ''}${note.title}. ${note.body}. ${time}`}>
+        <View style={[styles.icon, { backgroundColor: tone.bg }]}>
+          <Ionicons name={icon} size={18} color={tone.fg} />
+        </View>
+        <View style={styles.itemText}>
+          <View style={styles.titleRow}>
+            <Text style={styles.title} numberOfLines={1}>
+              {note.title}
+            </Text>
+            <Text style={styles.time}>{time}</Text>
+            {unread ? <View style={styles.unreadDot} /> : null}
+          </View>
+          <Text style={styles.message}>{note.body}</Text>
+        </View>
+      </View>
+    </Card>
   );
 }
 

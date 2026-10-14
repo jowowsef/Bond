@@ -46,6 +46,14 @@ export function useUnreadActivityCount(): number {
   return useSyncExternalStore(subscribe, getUnreadCount, getUnreadCount);
 }
 
+/** A notification Bond just showed on this phone (also counted on the bell). */
+export function noteLocalNotification(at: number): void {
+  if (seenAt === null || at <= seenAt) return;
+  latestOtherAt = Math.max(latestOtherAt, at);
+  unreadCount += 1;
+  emit();
+}
+
 /** Call when the Activity screen is visible. */
 export function markActivitySeen(): void {
   const now = Math.max(Date.now(), latestOtherAt);

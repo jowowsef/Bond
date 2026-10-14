@@ -16,3 +16,8 @@ android {
     abortOnError false
   }
 }
+
+dependencies {
+  // Provided by the app (React Native uses AppCompat); only needed to compile.
+  compileOnly "androidx.appcompat:appcompat:1.7.0"
+}

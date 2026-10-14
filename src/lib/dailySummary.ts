@@ -102,7 +102,7 @@ export async function maybeSendDailySummary(userId: string, now: Date = new Date
   await showLocalNotification(
     `${name}'s day`,
     summaryText(name, totalMs, (top.data as { app_name: string; foreground_ms: number } | null) ?? null),
-    { type: 'daily_summary' },
+    { kind: 'daily_summary' },
   );
   await write(userId, { ...saved, lastSentDay: today });
   return 'sent';

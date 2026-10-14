@@ -30,6 +30,11 @@ class BondPrefsModule : Module() {
       val safe = if (value == "light" || value == "dark") value else "system"
       // commit() (not apply()) so the value is on disk before the app reloads.
       prefs.edit().putString("theme", safe).commit()
+      // Android's night mode follows right away (splash and window background;
+      // the activity handles uiMode itself, so nothing is recreated).
+      appContext.currentActivity?.runOnUiThread {
+        runCatching { androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(BondPrefsPackage.nightModeFor(safe)) }
+      }
       safe
     }
   }
