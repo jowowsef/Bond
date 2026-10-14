@@ -53,7 +53,7 @@
         android:foregroundServiceType="specialUse">
       <property
           android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-          android:value="Consensual sharing of the foreground app name with the user's paired partner. Started only after the user opts in and grants Usage access; shows a persistent notification; checks Android usage events about every 20 seconds while the screen is on. The same service also shares battery level and charging state, and a daily screen time summary about every 15 minutes while the screen is on, only while the user has turned that sharing on." />
+          android:value="Consensual sharing of the foreground app name with the user's paired partner. Started only after the user opts in and grants Usage access; shows a persistent notification; checks Android usage events every few seconds while the screen is on. The same service also shares battery level and charging state, and a daily screen time summary about every 15 minutes while the screen is on, only while the user has turned that sharing on." />
     </service>
     <!--
       Optional "Live Currently Using" (BondAppWatchService): an accessibility

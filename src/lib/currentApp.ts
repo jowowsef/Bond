@@ -26,7 +26,7 @@ import { supabase } from './supabase';
  *
  * WHEN A CHECK HAPPENS (and honest limits)
  *  - Main path, while sharing is on: Bond's own foreground service (with a
- *    persistent notification) reads the usage log about every 20 seconds while
+ *    persistent notification) reads the usage log about every 2 seconds while
  *    the screen is on and reports when the app changes (see
  *    src/lib/currentAppService.ts). Android can still delay or stop it: battery
  *    saving, Samsung's sleeping-apps rules, or Bond being killed / force

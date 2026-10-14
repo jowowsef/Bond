@@ -310,8 +310,8 @@ export default function OptionalSetup() {
             : currentAppState === 'permission_required'
               ? `On, but Android's Usage access is off for Bond, so nothing is shared yet. Turn it on in Android Settings, or turn this off.`
               : currentAppState === 'enabled'
-                ? `On. ${partnerName} sees the name of the app open on your phone (only the latest, never a history, nothing inside apps), checked about every 20 seconds while the screen is on, with a notification while it runs. Turn it off here or anytime in Settings.`
-                : `Let ${partnerName} see which app you are using, checked about every 20 seconds while your screen is on, with a notification while it runs. Needs Android's Usage access.`
+                ? `On. ${partnerName} sees the name of the app open on your phone (only the latest, never a history, nothing inside apps), checked every few seconds while the screen is on, with a notification while it runs. Turn it off here or anytime in Settings.`
+                : `Let ${partnerName} see which app you are using, checked every few seconds while your screen is on, with a notification while it runs. Needs Android's Usage access.`
         }
         state={currentAppState}
         actionLabel="Turn on"

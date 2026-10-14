@@ -223,7 +223,7 @@ export function useCurrentAppSharing(userId: string | null, partnerName: string)
 export function currentAppStatusText(status: CurrentAppStatus, partnerName: string, ready = true): string {
   switch (status) {
     case 'running':
-      return `On. ${partnerName} sees the app open on your phone (checked about every 20 seconds while the screen is on).`;
+      return `On. ${partnerName} sees the app open on your phone (checked every few seconds while the screen is on).`;
     case 'starting':
       return ready
         ? 'On. Starting the background check… If this stays, open Bond again (Android only starts it while Bond is open).'

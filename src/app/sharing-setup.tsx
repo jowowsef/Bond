@@ -499,7 +499,7 @@ export default function SharingSetup() {
     title = 'Currently Using';
     body =
       `${partnerName} sees the name of the app open on your phone, only the latest and never what you do inside it. ` +
-      'It checks about every 20 seconds while your screen is on, with a quiet notification.';
+      'It checks every few seconds while your screen is on, with a quiet notification.';
     const st = currentApp.status;
     if (st === 'unavailable' || st === 'needs-update' || !usageSupported) {
       body = 'Currently Using needs the newest version of Bond on this phone.';

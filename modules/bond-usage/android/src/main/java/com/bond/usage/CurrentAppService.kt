@@ -27,7 +27,7 @@ import android.os.PowerManager
  * running") the whole time. There is never a second Bond service.
  *
  *  - Currently Using ("apps" mode; Currently Using sharing on + Usage
- *    access): while the screen is on, about every 20 seconds, it reads
+ *    access): while the screen is on, about every 2 seconds, it reads
  *    Android's usage log, works out which app is in front, and reports when it
  *    changes (plus a 10-minute refresh). Screen off: reports "no app" once and
  *    stops checking until the screen is on again.
@@ -560,8 +560,8 @@ class CurrentAppService : Service() {
     const val REASON_NO_ACCESS = "no-access"
     private const val DEFAULT_TITLE = "Bond"
     private const val DEFAULT_BODY = "Background activity is running"
-    const val DEFAULT_INTERVAL_MS = 20_000L
-    private const val MIN_INTERVAL_MS = 15_000L
+    const val DEFAULT_INTERVAL_MS = 2_000L
+    private const val MIN_INTERVAL_MS = 1_000L
     private const val MAX_INTERVAL_MS = 60_000L
     const val DEFAULT_HEARTBEAT_MS = 10 * 60_000L
     private const val MAX_RETRY_MS = 5 * 60_000L

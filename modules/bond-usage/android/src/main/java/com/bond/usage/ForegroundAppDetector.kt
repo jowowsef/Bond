@@ -14,7 +14,7 @@ import android.content.pm.PackageManager
  * (to know an app that was opened long ago and is still in front); later calls
  * read from the end of the last SUCCESSFUL read minus 2 minutes, because some
  * phones log events late. Replaying events changes nothing, so a check every
- * 20 seconds stays cheap. Only ACTIVITY_RESUMED sets the app; an empty read
+ * 2 seconds stays cheap. Only ACTIVITY_RESUMED sets the app; an empty read
  * keeps it (see ForegroundState).
  *
  * Returns null when no app is in front: screen off, lock screen, or the home

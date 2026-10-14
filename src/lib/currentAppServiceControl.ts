@@ -28,7 +28,7 @@ export function currentAppGeneration(): number {
 }
 
 /** Checks while the screen is on (Android may stretch this when saving battery). */
-export const CHECK_INTERVAL_MS = 20_000;
+export const CHECK_INTERVAL_MS = 2_000;
 /** "Still the same app" refresh, so the partner's "Checked" time stays honest. */
 export const HEARTBEAT_MS = 10 * 60_000;
 

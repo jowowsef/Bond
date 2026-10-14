@@ -43,7 +43,7 @@ const ON_TEXT: Record<ShareKind, (name: string) => Explain> = {
     body: `${name} will see the name of the app open on your phone and when it was last detected.`,
     points: [
       'Needs Android\'s "Usage access" for Bond.',
-      'Checked about every 20 seconds while your screen is on; Android shows a notification the whole time.',
+      'Checked every few seconds while your screen is on; Android shows a notification the whole time.',
       'Only the latest app, never a history, and nothing inside apps (no messages, notifications, typed text or passwords).',
     ],
     icon: 'phone-portrait-outline',
