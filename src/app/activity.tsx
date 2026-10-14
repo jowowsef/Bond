@@ -67,7 +67,7 @@ export default function Activity() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <StackHeader title="Activity" />
+      <StackHeader title="Notifications" />
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -77,24 +77,24 @@ export default function Activity() {
       >
         {loading ? (
           <Card style={styles.stateCard}>
-            <Text style={styles.stateText}>Loading activity…</Text>
+            <Text style={styles.stateText}>Loading…</Text>
           </Card>
         ) : error && logs.length === 0 ? (
           <Card style={styles.stateCard}>
             <Ionicons name="cloud-offline-outline" size={28} color={colors.muted} />
-            <Text style={styles.stateTitle}>Couldn&apos;t load activity</Text>
+            <Text style={styles.stateTitle}>Couldn&apos;t load notifications</Text>
             <Text style={styles.stateText}>Check your connection, then pull down or try again.</Text>
             <Button label="Try again" small variant="secondary" onPress={onRefresh} style={{ marginTop: spacing.sm }} />
           </Card>
         ) : logs.length === 0 ? (
           <Card style={styles.stateCard}>
             <Ionicons name="notifications-outline" size={28} color={colors.muted} />
-            <Text style={styles.stateTitle}>No activity yet</Text>
-            <Text style={styles.stateText}>Requests, approvals, and sharing changes will appear here.</Text>
+            <Text style={styles.stateTitle}>No notifications yet</Text>
+            <Text style={styles.stateText}>Requests and sharing changes show up here.</Text>
           </Card>
         ) : (
           <>
-            {error ? <Text style={styles.inlineError}>Couldn&apos;t refresh. Showing the last loaded activity.</Text> : null}
+            {error ? <Text style={styles.inlineError}>Couldn&apos;t refresh. Showing saved notifications.</Text> : null}
             {groups.map((g) => (
               <View key={g.key} style={styles.group}>
                 <Text style={styles.groupHeading}>{g.heading}</Text>

@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import { Redirect } from '@/components/Redirect';
 import React, { useEffect } from 'react';
@@ -19,6 +19,7 @@ import { useCouple } from '@/state/couple';
 import { shownName } from '@/lib/format';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
+type MciName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
 /**
  * The four main tabs, shown only once two partners are connected. Settings
@@ -86,7 +87,9 @@ export default function TabsLayout() {
   // where you are). It sits in its own space above the device's safe-area
   // inset, so it never covers a screen's content.
   const bottomPad = Math.max(insets.bottom, 12) + 8;
-  const tabIcon = (name: IconName, label: string) => {
+  // icon: an Ionicons name, or { mci } for a MaterialCommunityIcons one
+  // (the familiar Android home and screen-time hourglass icons).
+  const tabIcon = (name: IconName | { mci: MciName; active?: MciName }, label: string) => {
     const Icon = ({ focused }: { focused: boolean }) => (
       <View
         style={{
@@ -99,7 +102,15 @@ export default function TabsLayout() {
         }}
         accessibilityLabel={label}
       >
-        <Ionicons name={name} size={18} color={focused ? colors.onPrimary : colors.muted} />
+        {typeof name === 'string' ? (
+          <Ionicons name={name} size={18} color={focused ? colors.onPrimary : colors.muted} />
+        ) : (
+          <MaterialCommunityIcons
+            name={focused ? name.active ?? name.mci : name.mci}
+            size={21}
+            color={focused ? colors.onPrimary : colors.muted}
+          />
+        )}
       </View>
     );
     return Icon;
@@ -139,9 +150,9 @@ export default function TabsLayout() {
         tabBarItemStyle: { height: 36, alignItems: 'center', justifyContent: 'center' },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: tabIcon('home-outline', 'Home') }} />
+      <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: tabIcon({ mci: 'home-outline', active: 'home' }, 'Home') }} />
       <Tabs.Screen name="location" options={{ title: 'Location', tabBarIcon: tabIcon('location-outline', 'Location') }} />
-      <Tabs.Screen name="screen-time" options={{ title: 'Screen Time', tabBarIcon: tabIcon('phone-portrait-outline', 'Screen Time') }} />
+      <Tabs.Screen name="screen-time" options={{ title: 'Screen Time', tabBarIcon: tabIcon({ mci: 'timer-sand' }, 'Screen Time') }} />
       <Tabs.Screen name="calendar" options={{ title: 'Calendar', tabBarIcon: tabIcon('calendar-outline', 'Calendar') }} />
     </Tabs>
   );

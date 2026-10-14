@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useRef } from 'react';
 import { AppState, RefreshControl, Text, View } from 'react-native';
 import { ApprovalRequestCard } from '@/components/ApprovalRequestCard';
@@ -10,10 +10,8 @@ import { CurrentlyUsingCard } from '@/components/CurrentlyUsingCard';
 import { HeaderActions } from '@/components/HeaderActions';
 import { Screen } from '@/components/Screen';
 import { ScreenTimeSummaryCard } from '@/components/ScreenTimeSummaryCard';
-import { SectionHeader } from '@/components/SectionHeader';
 import { useMyBattery, usePartnerBattery } from '@/hooks/useBattery';
 import { useTogetherSince } from '@/hooks/useTogetherSince';
-import { activityMessage, activityVisual, useActivityFeed } from '@/hooks/useActivityFeed';
 import { usePartnerCurrentApp } from '@/hooks/useCurrentApp';
 import { useMyUsage } from '@/hooks/useMyUsage';
 import { usePartnerUsage } from '@/hooks/usePartnerUsage';
@@ -21,7 +19,7 @@ import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { tintForProfile } from '@/lib/avatar';
 import { syncBatteryIfSharing } from '@/lib/battery';
 import { syncCurrentAppIfSharing } from '@/lib/currentApp';
-import { dayKey, greeting, profileReady, timeAgo, shownName } from '@/lib/format';
+import { dayKey, greeting, profileReady, shownName } from '@/lib/format';
 import { colors, font, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
@@ -35,7 +33,6 @@ import { useCouple } from '@/state/couple';
  */
 export default function Home() {
   useThemeVersion();
-  const router = useRouter();
   const {
     userId,
     myProfile,
@@ -49,7 +46,6 @@ export default function Home() {
     refreshRequests,
   } = useCouple();
   const since = useTogetherSince();
-  const { logs, reload: reloadActivity } = useActivityFeed(3);
   const myBattery = useMyBattery();
   const {
     battery: partnerBattery,
@@ -92,7 +88,6 @@ export default function Home() {
   const { refreshing, onRefresh, failed: refreshFailed } = usePullToRefresh(async () => {
     const results = await Promise.allSettled([
       refresh(),
-      reloadActivity(),
       reloadPartnerBattery(),
       partnerApp.reload(),
       partnerUsage.reload(),
@@ -162,12 +157,7 @@ export default function Home() {
           {since ? (
             <View style={styles.together}>
               <Ionicons name="heart" size={14} color={colors.pink} />
-              <Text style={styles.togetherText}>
-                <Text style={styles.togetherStrong}>
-                  {since.days === 0 ? 'Day 1' : `${since.days} ${since.days === 1 ? 'day' : 'days'}`}
-                </Text>{' '}
-                together · since {since.label}
-              </Text>
+              <Text style={styles.togetherStrong}>Day {since.days + 1}</Text>
             </View>
           ) : null}
         </Card>
@@ -223,38 +213,6 @@ export default function Home() {
         {/* Today's screen time for both; a tap opens the detailed statistics. */}
         <ScreenTimeSummaryCard hasPartner={!!partnerId} partnerName={partnerName} mine={myUsage} partner={partnerUsage} />
 
-        <SectionHeader
-          title="Recent activity"
-          right={
-            <Text style={styles.seeAll} onPress={() => router.push('/activity')}>
-              See all
-            </Text>
-          }
-        />
-        <Card>
-          {logs.length === 0 ? (
-            <Text style={styles.empty}>Nothing yet. Activity between you two will show up here.</Text>
-          ) : (
-            logs.map((log, i) => {
-              const v = activityVisual(log.kind);
-              return (
-                <View key={log.id} style={[styles.activityRow, i < logs.length - 1 && styles.divider]}>
-                  <Ionicons
-                    name={v.icon as React.ComponentProps<typeof Ionicons>['name']}
-                    size={18}
-                    color={colors.primary}
-                    style={styles.activityIcon}
-                  />
-                  <Text style={styles.activityText} numberOfLines={2}>
-                    {activityMessage(log, { myName, partnerName, myUserId: userId })}
-                  </Text>
-                  <Text style={styles.activityTime}>{timeAgo(log.created_at)}</Text>
-                </View>
-              );
-            })
-          )}
-        </Card>
-
         <View style={{ height: spacing.xl }} />
       </View>
     </Screen>
@@ -273,8 +231,7 @@ const styles = themedStyles(() => ({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  togetherText: { ...font.small, color: colors.subtext },
-  togetherStrong: { fontWeight: '700', color: colors.text },
+  togetherStrong: { ...font.small, fontWeight: '700', color: colors.text },
   settingUp: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md, backgroundColor: colors.primarySoft, borderColor: colors.primarySoft },
   settingUpText: { ...font.small, color: colors.text, flex: 1, lineHeight: 18 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
@@ -293,11 +250,5 @@ const styles = themedStyles(() => ({
   batteryUpdated: { ...font.tiny, color: colors.muted, textAlign: 'right', marginTop: 2 },
   requests: { marginTop: spacing.lg, gap: spacing.md },
   cards: { marginTop: spacing.lg, gap: spacing.md },
-  seeAll: { ...font.small, fontWeight: '700', color: colors.primary },
-  empty: { ...font.small, color: colors.muted, lineHeight: 19 },
-  activityRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm + 2 },
   divider: { borderBottomWidth: 1, borderBottomColor: colors.border },
-  activityIcon: { marginRight: spacing.sm, width: 22, textAlign: 'center' },
-  activityText: { ...font.small, color: colors.text, flex: 1, lineHeight: 18 },
-  activityTime: { ...font.tiny, color: colors.muted, marginLeft: spacing.sm },
 }));

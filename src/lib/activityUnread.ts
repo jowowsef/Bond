@@ -3,17 +3,19 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { supabase, uniqueTopic } from './supabase';
 
 /**
- * "New activity" dot for the bell icon.
+ * Unread count for the bell (Notifications).
  *
  * Kept on this phone only (no database change): we remember when you last
- * opened Activity, and show the dot when your partner (or the system) logged
- * something after that. Your own actions never light it up.
+ * opened Notifications, and count what your partner (or the system) logged
+ * after that. Your own actions never count.
  */
 
 const SEEN_KEY = 'bond.activity.seenAt';
 
 let seenAt: number | null = null; // null until loaded from storage
 let latestOtherAt = 0;
+/** How many partner / system entries are newer than seenAt. */
+let unreadCount = 0;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -31,14 +33,24 @@ function hasUnread(): boolean {
   return seenAt !== null && latestOtherAt > seenAt;
 }
 
+function getUnreadCount(): number {
+  return hasUnread() ? Math.max(unreadCount, 1) : 0;
+}
+
 export function useHasUnreadActivity(): boolean {
   return useSyncExternalStore(subscribe, hasUnread, hasUnread);
+}
+
+/** How many new notifications (0 = none). */
+export function useUnreadActivityCount(): number {
+  return useSyncExternalStore(subscribe, getUnreadCount, getUnreadCount);
 }
 
 /** Call when the Activity screen is visible. */
 export function markActivitySeen(): void {
   const now = Math.max(Date.now(), latestOtherAt);
   seenAt = now;
+  unreadCount = 0;
   emit();
   AsyncStorage.setItem(SEEN_KEY, String(now)).catch(() => {});
 }
@@ -59,6 +71,17 @@ export function useActivityUnreadTracker(userId: string | null): void {
         .maybeSingle();
       if (!active || !data?.created_at) return;
       latestOtherAt = new Date(data.created_at as string).getTime();
+      if (seenAt !== null && latestOtherAt > seenAt) {
+        const { count } = await supabase
+          .from('activity_logs')
+          .select('id', { count: 'exact', head: true })
+          .or(`actor_id.is.null,actor_id.neq.${userId}`)
+          .gt('created_at', new Date(seenAt).toISOString());
+        if (!active) return;
+        unreadCount = count ?? 1;
+      } else {
+        unreadCount = 0;
+      }
       emit();
     };
 
@@ -102,6 +125,7 @@ export function getActivitySeenAt(): number | null {
 export function resetActivityUnread(): void {
   seenAt = null;
   latestOtherAt = 0;
+  unreadCount = 0;
   emit();
   AsyncStorage.removeItem(SEEN_KEY).catch(() => {});
 }
