@@ -1,17 +1,22 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, AppState, Pressable, RefreshControl, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Modal, Pressable, RefreshControl, Switch, Text, TextInput, View } from 'react-native';
+import { Avatar } from '@/components/Avatar';
+import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
+import { SectionHeader } from '@/components/SectionHeader';
 import { HeaderActions } from '@/components/HeaderActions';
 import { BackgroundLocationStatus } from '@/components/BackgroundLocationStatus';
 import { LocationPersonRow } from '@/components/LocationPersonRow';
 import { PartnerMap } from '@/components/PartnerMap';
 import { Screen } from '@/components/Screen';
+import { usePartnerBattery } from '@/hooks/useBattery';
 import { useCoupleLocations } from '@/hooks/useCoupleLocations';
 import { useLocationSharingSwitch } from '@/hooks/useLocationSharingSwitch';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { timeAgo } from '@/lib/format';
+import { distanceMeters } from '@/lib/location';
 import {
   askToTurnOnLocationServices,
   getLocationAccessInfo,
@@ -19,6 +24,18 @@ import {
   updateLocationNow,
 } from '@/lib/location';
 import { MAP_BACKGROUND } from '@/lib/mapStyle';
+import { tintForProfile } from '@/lib/avatar';
+import {
+  addPlace,
+  distanceLabel,
+  openDirections,
+  PLACE_KINDS,
+  placeAt,
+  readPlaces,
+  removePlace,
+  type PlaceKind,
+  type SavedPlace,
+} from '@/lib/places';
 import { openAppSettings } from '@/lib/setupPermissions';
 import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
@@ -37,8 +54,24 @@ import { useCouple } from '@/state/couple';
 export default function LocationScreen() {
   useThemeVersion();
   const router = useRouter();
-  const { userId, partnerProfile, refresh } = useCouple();
+  const { userId, couple, partnerId, partnerProfile, partnerAvatarUrl, refresh } = useCouple();
   const partnerName = partnerProfile?.display_name ?? 'Partner';
+  const coupleId = couple?.id ?? null;
+  const { battery: partnerBattery } = usePartnerBattery(partnerId);
+
+  // Saved places (this phone only).
+  const [places, setPlaces] = useState<SavedPlace[]>([]);
+  useEffect(() => {
+    if (!userId || !coupleId) return;
+    let cancelled = false;
+    void readPlaces(userId, coupleId).then((list) => {
+      if (!cancelled) setPlaces(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, coupleId]);
+  const [adding, setAdding] = useState(false);
 
   const { me, partner, markers, loading, error, reload, diagnostics } = useCoupleLocations();
   const [access, setAccess] = useState<LocationAccessInfo | null>(null);
@@ -100,6 +133,25 @@ export default function LocationScreen() {
 
   // My row: the switch shows on/off, so the text describes what it means.
   const mySub = !me.sharing ? 'Your location is private' : undefined;
+  const myAt = me.loc ? placeAt(me.loc.latitude, me.loc.longitude, places) : null;
+  const partnerAt = partner.loc ? placeAt(partner.loc.latitude, partner.loc.longitude, places) : null;
+  const partnerWhere = !partner.sharing
+    ? 'Location not shared'
+    : !partner.loc
+      ? 'Waiting for location'
+      : partnerAt
+        ? `At ${partnerAt.name}`
+        : partner.place ?? partner.statusLabel;
+  const apart =
+    me.loc && partner.loc ? distanceMeters(me.loc.latitude, me.loc.longitude, partner.loc.latitude, partner.loc.longitude) : null;
+
+  function confirmRemove(pl: SavedPlace) {
+    if (!userId || !coupleId) return;
+    Alert.alert(`Remove ${pl.name}?`, 'It is only removed from this phone.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => void removePlace(userId, coupleId, pl.id).then(setPlaces) },
+    ]);
+  }
 
   // At most one problem is shown, the most important first.
   let warning: { text: string; onPress?: () => void } | null = null;
@@ -151,17 +203,51 @@ export default function LocationScreen() {
         ) : null}
       </View>
 
-      <Card style={styles.panel}>
-        <LocationPersonRow
-          who="partner"
-          person={partner}
-          onPress={partner.loc ? () => openMap('partner') : undefined}
+      {/* Partner: where they are, how far, and directions. */}
+      <Card style={styles.partnerCard}>
+        <View style={styles.partnerHead}>
+          <Avatar name={partnerName} url={partnerAvatarUrl} size={44} tint={tintForProfile(partnerProfile)} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.partnerName} numberOfLines={1}>
+              {partnerName}
+            </Text>
+            <Text style={styles.partnerWhere} numberOfLines={1}>
+              {partnerWhere}
+            </Text>
+          </View>
+          {partnerBattery?.level ? (
+            <View style={styles.batteryChip}>
+              <Ionicons name={partnerBattery.is_charging ? 'battery-charging' : 'battery-half'} size={14} color={colors.success} />
+              <Text style={styles.batteryChipText}>{partnerBattery.level}%</Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={styles.tiles}>
+          <View style={styles.tile}>
+            <Text style={styles.tileLabel}>Distance</Text>
+            <Text style={styles.tileValue}>{apart != null ? distanceLabel(apart) : '—'}</Text>
+          </View>
+          <View style={styles.tile}>
+            <Text style={styles.tileLabel}>Updated</Text>
+            <Text style={styles.tileValue} numberOfLines={1}>
+              {partner.loc ? timeAgo(partner.loc.updated_at) : partner.sharing ? 'Waiting' : 'Not shared'}
+            </Text>
+          </View>
+        </View>
+        <Button
+          label={`Directions to ${partnerName}`}
+          icon="navigate-outline"
+          disabled={!partner.loc}
+          onPress={() => partner.loc && void openDirections(partner.loc.latitude, partner.loc.longitude)}
         />
-        <View style={styles.divider} />
+      </Card>
+
+      {/* You: your own sharing switch and any problem with it. */}
+      <Card style={styles.panel}>
         <LocationPersonRow
           who="me"
           person={me}
-          sub={mySub}
+          sub={myAt ? `At ${myAt.name}` : mySub}
           right={
             <Switch
               value={sharingSwitch.pending ?? me.sharing}
@@ -184,6 +270,67 @@ export default function LocationScreen() {
           </Text>
         ) : null}
       </Card>
+
+      {/* Saved places (this phone only). */}
+      <SectionHeader
+        title="Places"
+        right={
+          <Text style={styles.addLink} onPress={() => setAdding(true)} accessibilityRole="button">
+            + Add place
+          </Text>
+        }
+      />
+      <Card style={{ paddingVertical: places.length ? spacing.xs : spacing.md }}>
+        {places.length === 0 ? (
+          <Text style={styles.placesEmpty}>
+            Save places like Home, School or Work to see when you&apos;re there and get directions. Saved on this phone only.
+          </Text>
+        ) : (
+          places.map((pl, i) => {
+            const meta = PLACE_KINDS.find((k) => k.kind === pl.kind) ?? PLACE_KINDS[4];
+            const here = [
+              me.loc && placeAt(me.loc.latitude, me.loc.longitude, [pl]) ? 'You' : null,
+              partner.loc && placeAt(partner.loc.latitude, partner.loc.longitude, [pl]) ? partnerName : null,
+            ].filter(Boolean);
+            const from = me.loc ?? null;
+            return (
+              <Pressable
+                key={pl.id}
+                onPress={() => void openDirections(pl.lat, pl.lng)}
+                onLongPress={() => confirmRemove(pl)}
+                accessibilityRole="button"
+                accessibilityLabel={`${pl.name}. Tap for directions, hold to remove.`}
+                style={({ pressed }) => [styles.placeRow, i > 0 && styles.placeDivider, pressed && { opacity: 0.7 }]}
+              >
+                <View style={styles.placeIcon}>
+                  <Ionicons name={`${meta.icon}-outline` as IconName} size={18} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.placeName} numberOfLines={1}>
+                    {pl.name}
+                  </Text>
+                  <Text style={styles.placeSub} numberOfLines={1}>
+                    {here.length ? `${here.join(' & ')} ${here.length > 1 ? 'are' : 'is'} here` : from ? distanceLabel(distanceMeters(from.latitude, from.longitude, pl.lat, pl.lng), 'from you') : 'Tap for directions'}
+                  </Text>
+                </View>
+                <Ionicons name="navigate-outline" size={18} color={colors.muted} />
+              </Pressable>
+            );
+          })
+        )}
+      </Card>
+      <AddPlaceModal
+        visible={adding}
+        partnerName={partnerName}
+        mine={me.loc ? { lat: me.loc.latitude, lng: me.loc.longitude } : null}
+        theirs={partner.loc ? { lat: partner.loc.latitude, lng: partner.loc.longitude } : null}
+        onClose={() => setAdding(false)}
+        onSave={async (place) => {
+          if (!userId || !coupleId) return;
+          setPlaces(await addPlace(userId, coupleId, place));
+          setAdding(false);
+        }}
+      />
 
       <Pressable
         style={styles.detailsToggle}
@@ -304,6 +451,106 @@ export default function LocationScreen() {
   }
 }
 
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
+
+/** Add a saved place from a position Bond already shows (yours or your partner's). */
+function AddPlaceModal({
+  visible,
+  partnerName,
+  mine,
+  theirs,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  partnerName: string;
+  mine: { lat: number; lng: number } | null;
+  theirs: { lat: number; lng: number } | null;
+  onClose: () => void;
+  onSave: (place: { kind: PlaceKind; name: string; lat: number; lng: number }) => Promise<void>;
+}) {
+  useThemeVersion();
+  const [kind, setKind] = useState<PlaceKind>('home');
+  const [name, setName] = useState('Home');
+  const [source, setSource] = useState<'mine' | 'theirs'>('mine');
+  const [saving, setSaving] = useState(false);
+  const point = source === 'mine' ? mine : theirs;
+
+  function pick(k: PlaceKind) {
+    setKind(k);
+    const label = PLACE_KINDS.find((x) => x.kind === k)?.label ?? '';
+    setName(k === 'other' ? '' : label);
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalSheet}>
+          <Text style={styles.modalTitle}>Add a place</Text>
+          <View style={styles.kindRow}>
+            {PLACE_KINDS.map((k) => (
+              <Pressable
+                key={k.kind}
+                onPress={() => pick(k.kind)}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: kind === k.kind }}
+                style={[styles.kindChip, kind === k.kind && styles.kindChipOn]}
+              >
+                <Ionicons name={`${k.icon}-outline` as IconName} size={15} color={kind === k.kind ? '#fff' : colors.primary} />
+                <Text style={[styles.kindText, kind === k.kind && { color: '#fff' }]}>{k.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <TextInput
+            value={name}
+            onChangeText={setName}
+            placeholder="Name (for example Lola's house)"
+            placeholderTextColor={colors.muted}
+            style={styles.modalInput}
+            maxLength={30}
+          />
+          <Text style={styles.modalLabel}>Where is it?</Text>
+          <View style={styles.kindRow}>
+            <Pressable
+              onPress={() => setSource('mine')}
+              disabled={!mine}
+              style={[styles.kindChip, source === 'mine' && styles.kindChipOn, !mine && { opacity: 0.4 }]}
+            >
+              <Text style={[styles.kindText, source === 'mine' && { color: '#fff' }]}>Where I am now</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setSource('theirs')}
+              disabled={!theirs}
+              style={[styles.kindChip, source === 'theirs' && styles.kindChipOn, !theirs && { opacity: 0.4 }]}
+            >
+              <Text style={[styles.kindText, source === 'theirs' && { color: '#fff' }]}>Where {partnerName} is</Text>
+            </Pressable>
+          </View>
+          {!mine && !theirs ? (
+            <Text style={styles.placesEmpty}>Turn on location sharing first, so Bond knows where the place is.</Text>
+          ) : null}
+          <Button
+            label="Save place"
+            loading={saving}
+            disabled={!point || !name.trim()}
+            onPress={async () => {
+              if (!point) return;
+              setSaving(true);
+              await onSave({ kind, name: name.trim(), lat: point.lat, lng: point.lng });
+              setSaving(false);
+              setKind('home');
+              setName('Home');
+              setSource('mine');
+            }}
+            style={{ marginTop: spacing.lg }}
+          />
+          <Button label="Cancel" variant="ghost" onPress={onClose} />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function DetailRow({ label, value }: { label: string; value: string }) {
   useThemeVersion();
   return (
@@ -318,7 +565,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 const styles = themedStyles(() => ({
   mapCard: {
-    height: 320,
+    height: 360,
     borderRadius: radius.lg,
     backgroundColor: MAP_BACKGROUND,
     overflow: 'hidden',
@@ -355,7 +602,64 @@ const styles = themedStyles(() => ({
   },
   centerText: { ...font.small, color: '#B9B9B9', textAlign: 'center', lineHeight: 19 },
   retry: { ...font.small, fontWeight: '700', color: colors.me, paddingVertical: spacing.xs },
-  panel: { marginTop: spacing.lg, paddingVertical: spacing.sm },
+  panel: { marginTop: spacing.md, paddingVertical: spacing.sm },
+  partnerCard: { marginTop: spacing.lg, gap: spacing.md },
+  partnerHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  partnerName: { ...font.h3, color: colors.text },
+  partnerWhere: { ...font.small, color: colors.subtext, marginTop: 1 },
+  batteryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.successSoft,
+  },
+  batteryChipText: { ...font.small, fontWeight: '700', color: colors.success },
+  tiles: { flexDirection: 'row', gap: spacing.sm },
+  tile: { flex: 1, backgroundColor: colors.background, borderRadius: radius.md, padding: spacing.md },
+  tileLabel: { ...font.tiny, color: colors.muted, letterSpacing: 0 },
+  tileValue: { ...font.h3, color: colors.text, marginTop: 2 },
+  addLink: { ...font.small, fontWeight: '700', color: colors.primary },
+  placesEmpty: { ...font.small, color: colors.muted, lineHeight: 19 },
+  placeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md },
+  placeDivider: { borderTopWidth: 1, borderTopColor: colors.border },
+  placeIcon: { width: 36, height: 36, borderRadius: radius.md, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  placeName: { ...font.body, fontWeight: '700', color: colors.text },
+  placeSub: { ...font.small, color: colors.subtext, marginTop: 1 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
+  modalSheet: {
+    backgroundColor: colors.card,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    padding: spacing.xl,
+    gap: spacing.sm,
+  },
+  modalTitle: { ...font.h2, color: colors.text, marginBottom: spacing.xs },
+  modalLabel: { ...font.small, fontWeight: '700', color: colors.text, marginTop: spacing.sm },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: colors.text,
+    marginTop: spacing.sm,
+  },
+  kindRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  kindChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primarySoft,
+  },
+  kindChipOn: { backgroundColor: colors.primary },
+  kindText: { ...font.small, fontWeight: '700', color: colors.primary },
   divider: { height: 1, backgroundColor: colors.border },
   warn: { ...font.small, color: colors.warning, marginTop: spacing.xs, marginBottom: spacing.xs, lineHeight: 18 },
   detailsToggle: {

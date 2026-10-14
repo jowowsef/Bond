@@ -12,7 +12,7 @@ import { Screen } from '@/components/Screen';
 import { ScreenTimeSummaryCard } from '@/components/ScreenTimeSummaryCard';
 import { SectionHeader } from '@/components/SectionHeader';
 import { useMyBattery, usePartnerBattery } from '@/hooks/useBattery';
-import { useCoupleLocations } from '@/hooks/useCoupleLocations';
+import { useTogetherSince } from '@/hooks/useTogetherSince';
 import { activityMessage, activityVisual, useActivityFeed } from '@/hooks/useActivityFeed';
 import { usePartnerCurrentApp } from '@/hooks/useCurrentApp';
 import { useMyUsage } from '@/hooks/useMyUsage';
@@ -21,7 +21,6 @@ import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { tintForProfile } from '@/lib/avatar';
 import { syncBatteryIfSharing } from '@/lib/battery';
 import { syncCurrentAppIfSharing } from '@/lib/currentApp';
-import { distanceMeters } from '@/lib/location';
 import { dayKey, greeting, timeAgo } from '@/lib/format';
 import { colors, font, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
@@ -49,7 +48,7 @@ export default function Home() {
     refresh,
     refreshRequests,
   } = useCouple();
-  const places = useCoupleLocations();
+  const since = useTogetherSince();
   const { logs, reload: reloadActivity } = useActivityFeed(3);
   const myBattery = useMyBattery();
   const {
@@ -132,7 +131,7 @@ export default function Home() {
       ) : null}
 
       <View style={styles.inner}>
-        {/* The two of you: where you are and your battery (only what each shares). */}
+        {/* The two of you, and how long you've been together on Bond. */}
         <Card style={styles.couple}>
           <CoupleAvatars
             me={{ name: myName, url: myAvatarUrl, tint: tintForProfile(myProfile) }}
@@ -142,12 +141,10 @@ export default function Home() {
           <View style={styles.people}>
             <Person
               name="You"
-              place={places.me.sharing ? places.me.place : null}
               battery={myBattery.level > 0 ? `${myBattery.level}%${myBattery.charging ? ' · charging' : ''}` : null}
             />
             <Person
               name={partnerName}
-              place={places.partner.sharing ? places.partner.place : null}
               battery={
                 partnerBattery && partnerBattery.level != null && partnerBattery.level > 0
                   ? `${partnerBattery.level}%${partnerBattery.is_charging ? ' · charging' : ''}${partnerBatteryStale ? ' · old' : ''}`
@@ -157,20 +154,13 @@ export default function Home() {
               }
             />
           </View>
-          <View style={styles.coupleFooter}>
-            <View style={styles.footerLeft}>
-              <Ionicons name="location-outline" size={14} color={colors.subtext} />
-              <Text style={styles.footerText} onPress={() => router.push('/location')}>
-                {distanceText(places.me.loc, places.partner.loc) ??
-                  (places.partner.sharing ? places.partner.statusLabel : 'Location not shared')}
-              </Text>
+          {since ? (
+            <View style={styles.together}>
+              <Text style={styles.togetherNumber}>{since.days === 0 ? 'Day 1' : `${since.days} ${since.days === 1 ? 'day' : 'days'}`}</Text>
+              <Text style={styles.togetherLabel}>together on Bond</Text>
+              <Text style={styles.togetherSince}>Since {since.label}</Text>
             </View>
-            {partnerBattery?.updated_at ? (
-              <Text style={[styles.footerText, partnerBatteryStale && { color: colors.warning }]}>
-                Updated {timeAgo(partnerBattery.updated_at)}
-              </Text>
-            ) : null}
-          </View>
+          ) : null}
         </Card>
 
         {/* What the partner is using (their phone's latest check). */}
@@ -252,29 +242,13 @@ export default function Home() {
   );
 }
 
-/** "1.2 km apart" when both locations are known (null otherwise). */
-function distanceText(
-  a: { latitude: number; longitude: number } | null,
-  b: { latitude: number; longitude: number } | null,
-): string | null {
-  if (!a || !b) return null;
-  const m = distanceMeters(a.latitude, a.longitude, b.latitude, b.longitude);
-  if (m < 100) return 'Together';
-  return m < 1000 ? `${Math.round(m / 10) * 10} m apart` : `${(m / 1000).toFixed(m < 10_000 ? 1 : 0)} km apart`;
-}
-
-function Person({ name, place, battery }: { name: string; place: string | null; battery: string | null }) {
+function Person({ name, battery }: { name: string; battery: string | null }) {
   useThemeVersion();
   return (
     <View style={styles.person}>
       <Text style={styles.personName} numberOfLines={1}>
         {name}
       </Text>
-      {place ? (
-        <Text style={styles.personSub} numberOfLines={1}>
-          {place}
-        </Text>
-      ) : null}
       {battery ? (
         <Text style={styles.personSub} numberOfLines={1}>
           {battery}
@@ -290,17 +264,16 @@ const styles = themedStyles(() => ({
   person: { width: '42%', alignItems: 'center' },
   personName: { ...font.h3, color: colors.text },
   personSub: { ...font.tiny, color: colors.subtext, marginTop: 2, letterSpacing: 0, textAlign: 'center' },
-  coupleFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  together: {
     alignItems: 'center',
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  footerLeft: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 },
-  footerText: { ...font.small, color: colors.subtext },
+  togetherNumber: { ...font.number, fontSize: 28, color: colors.text },
+  togetherLabel: { ...font.small, color: colors.subtext },
+  togetherSince: { ...font.tiny, color: colors.muted, marginTop: spacing.xs, letterSpacing: 0 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   greeting: { ...font.small, color: colors.subtext, marginBottom: 2 },
   title: { ...font.title, color: colors.text, marginTop: 2 },

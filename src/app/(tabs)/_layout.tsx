@@ -14,7 +14,7 @@ import { usePartnerAlerts } from '@/hooks/usePartnerAlerts';
 import { useActivityUnreadTracker } from '@/lib/activityUnread';
 import { registerBackgroundJobs } from '@/lib/backgroundJobs';
 import { maybeSendDailySummary } from '@/lib/dailySummary';
-import { colors, isDarkTheme, useThemeVersion } from '@/lib/theme';
+import { colors, shadow, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -85,21 +85,20 @@ export default function TabsLayout() {
   // where you are). It sits in its own space above the device's safe-area
   // inset, so it never covers a screen's content.
   const bottomPad = Math.max(insets.bottom, 12) + 8;
-  const barColor = isDarkTheme() ? colors.card : colors.text;
   const tabIcon = (name: IconName, label: string) => {
     const Icon = ({ focused }: { focused: boolean }) => (
       <View
         style={{
           width: 44,
           height: 44,
-          borderRadius: 22,
+          borderRadius: 14,
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: focused ? colors.background : 'transparent',
+          backgroundColor: focused ? colors.primary : 'transparent',
         }}
         accessibilityLabel={label}
       >
-        <Ionicons name={name} size={21} color={focused ? colors.text : colors.muted} />
+        <Ionicons name={name} size={21} color={focused ? '#fff' : colors.muted} />
       </View>
     );
     return Icon;
@@ -129,7 +128,9 @@ export default function TabsLayout() {
                 top: 8,
                 height: 64,
                 borderRadius: 32,
-                backgroundColor: barColor,
+                backgroundColor: colors.card,
+                ...shadow,
+                elevation: 6,
               }}
             />
           </View>

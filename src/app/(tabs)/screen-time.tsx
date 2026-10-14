@@ -1,35 +1,36 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, RefreshControl, Text, View } from 'react-native';
-import { AppUsageRow } from '@/components/AppUsageRow';
+import { AppState, Pressable, RefreshControl, Text, View } from 'react-native';
+import { AppIcon } from '@/components/AppUsageRow';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { HeaderActions } from '@/components/HeaderActions';
 import { Screen } from '@/components/Screen';
-import { SectionHeader } from '@/components/SectionHeader';
 import { useAppIcons } from '@/hooks/useAppIcons';
-import { useMyUsage, type MyUsageState } from '@/hooks/useMyUsage';
+import { useMyUsage } from '@/hooks/useMyUsage';
 import { PARTNER_STALE_MS, usePartnerUsage } from '@/hooks/usePartnerUsage';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
-import { dayKey, formatDuration, formatTime, timeAgo } from '@/lib/format';
+import { dailyAverage, useWeekUsage } from '@/hooks/useWeekUsage';
+import { dayKey, formatDuration, timeAgo } from '@/lib/format';
 import { getLastScreenTimeSync, syncScreenTime } from '@/lib/screenTime';
 import { requestUsageAccess } from '@/lib/usageAccessFlow';
 import { supabase } from '@/lib/supabase';
 import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
-/** Each main list shows the top 3; Statistics shows all of today's apps. */
-const TOP_APPS = 3;
+/** The top apps list shows this many; Statistics shows all of today's apps. */
+const TOP_APPS = 4;
+const WEEKDAY = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 /**
- * SCREEN TIME tab: TODAY only (real data only, no earlier days).
- *
- *  1-3. You: today's total and top 3 apps, read straight from this phone
- *       (Android Usage access), then Statistics (all of today's apps).
- *  4-6. Partner: today's total (with when it was last synced), the top 3
- *       apps, then their Statistics. This is what their phone last uploaded
- *       for today.
+ * SCREEN TIME tab.
+ *  - Day / Week switch.
+ *  - Day: today's total for each of you. Week: each of you's daily average
+ *    over the last 7 days, and a bar chart (you and your partner per day).
+ *  - Top apps today, for your partner or you.
+ *  - Statistics (all apps, details) for each of you.
+ * Yours comes from this phone (Android Usage access); your partner's is what
+ * their phone uploaded, only while they share screen time.
  */
 export default function ScreenTimeTab() {
   useThemeVersion();
@@ -38,14 +39,12 @@ export default function ScreenTimeTab() {
   const partnerName = partnerProfile?.display_name ?? 'Your partner';
 
   const { state: mine, reload: reloadMine } = useMyUsage();
+  const partner = usePartnerUsage(partnerId, dayKey());
+  const week = useWeekUsage(partnerId);
+  const [mode, setMode] = useState<'day' | 'week'>('week');
+  const [whose, setWhose] = useState<'partner' | 'me'>('partner');
   const [mySharing, setMySharing] = useState<boolean | null>(null);
   const [lastSent, setLastSent] = useState<string | null>(null);
-
-  // Partner: the shared loader (also used by Home and Statistics).
-  const partner = usePartnerUsage(partnerId, dayKey());
-  const { sharing: partnerSharing, total: partnerTotal, loading: partnerLoading, error: partnerError, now } = partner;
-  const partnerApps = partner.apps.slice(0, TOP_APPS);
-  const loadPartner = partner.reload;
 
   const mounted = useRef(true);
   useEffect(() => {
@@ -55,7 +54,7 @@ export default function ScreenTimeTab() {
     };
   }, []);
 
-  // ---- my sharing status + upload (checks Usage access and the Privacy switch itself) ----
+  // My sharing status + upload (checks Usage access and the Privacy switch itself).
   const syncMine = useCallback(async () => {
     if (!userId) return;
     const [privacy, result, last] = await Promise.all([
@@ -69,18 +68,18 @@ export default function ScreenTimeTab() {
     else if (last) setLastSent(last.at);
   }, [userId]);
 
+  const loadPartner = partner.reload;
+  const reloadWeek = week.reload;
   const loadAll = useCallback(async () => {
-    const results = await Promise.allSettled([reloadMine(), syncMine(), loadPartner()]);
+    const results = await Promise.allSettled([reloadMine(), syncMine(), loadPartner(), reloadWeek()]);
     if (results.some((r) => r.status === 'rejected')) throw new Error('refresh failed');
-  }, [reloadMine, syncMine, loadPartner]);
-
+  }, [reloadMine, syncMine, loadPartner, reloadWeek]);
   const { refreshing, onRefresh, failed } = usePullToRefresh(loadAll);
 
-  // useMyUsage re-reads this phone on its own; these keep sharing + partner fresh.
   useFocusEffect(
     useCallback(() => {
-      void Promise.allSettled([syncMine(), loadPartner()]);
-    }, [syncMine, loadPartner]),
+      void Promise.allSettled([syncMine(), loadPartner(), reloadWeek()]);
+    }, [syncMine, loadPartner, reloadWeek]),
   );
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s) => {
@@ -89,234 +88,312 @@ export default function ScreenTimeTab() {
     return () => sub.remove();
   }, [syncMine, loadPartner]);
 
-  const partnerIcons = useAppIcons(partnerApps.map((a) => a.package_name));
-  const partnerUpdatedMs = partnerTotal ? new Date(partnerTotal.updated_at).getTime() : 0;
-  const partnerStale = !!partnerTotal && now - partnerUpdatedMs > PARTNER_STALE_MS;
-  const partnerTop = partnerApps[0]?.foreground_ms ?? 0;
+  // ---- summary values ----
+  const myToday = mine.kind === 'ready' ? mine.usage.totalMs : null;
+  const partnerToday = partner.sharing === false ? null : partner.total ? partner.total.total_ms : partner.loading ? null : 0;
+  const myAvg = dailyAverage(week.mine);
+  const partnerAvg = dailyAverage(week.partner);
+  const partnerStale = !!partner.total && partner.now - new Date(partner.total.updated_at).getTime() > PARTNER_STALE_MS;
+
+  const mySummary = mode === 'day' ? myToday : myAvg;
+  const partnerSummary = mode === 'day' ? partnerToday : partnerAvg;
+  const label = mode === 'day' ? 'today' : 'daily avg';
+
+  // ---- top apps (today) ----
+  const myApps = mine.kind === 'ready' ? mine.usage.apps.slice(0, TOP_APPS).map((a) => ({ pkg: a.packageName, name: a.appName, ms: a.foregroundMs })) : [];
+  const partnerApps =
+    partner.sharing === false ? [] : partner.apps.slice(0, TOP_APPS).map((a) => ({ pkg: a.package_name, name: a.app_name, ms: a.foreground_ms }));
+  const apps = whose === 'partner' ? partnerApps : myApps;
+  const icons = useAppIcons(apps.map((a) => a.pkg));
+  const topMs = apps[0]?.ms ?? 0;
+
+  // ---- week chart ----
+  const maxDay = Math.max(1, ...(week.mine ?? []), ...(week.partner ?? []));
 
   return (
     <Screen
-      title="Screen Time"
+      title="Screen time"
       right={<HeaderActions />}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
-      }
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
     >
       {failed ? <Text style={styles.refreshError}>Couldn&apos;t refresh everything. Check your connection and pull again.</Text> : null}
 
-      <SectionHeader title="You · Today" />
-      <MineCard
-        state={mine}
-        sharing={mySharing}
-        lastSent={lastSent}
-        partnerName={partnerName}
-        onStatistics={() => router.push('/screen-time-stats')}
-      />
+      <View style={styles.toggleRow}>
+        <Segmented
+          value={mode}
+          options={[
+            ['day', 'Day'],
+            ['week', 'Week'],
+          ]}
+          onChange={(v) => setMode(v as 'day' | 'week')}
+        />
+      </View>
 
-      <SectionHeader title={`${partnerName} · Today`} />
-      {partnerLoading ? (
-        <Card>
-          <Text style={styles.muted}>Loading…</Text>
-        </Card>
-      ) : partnerError && !partnerTotal ? (
-        <Card>
-          <Text style={styles.muted}>Couldn&apos;t load {partnerName}&apos;s screen time. Pull down to try again.</Text>
-        </Card>
-      ) : partnerSharing === false ? (
-        <Card>
-          <Text style={styles.muted}>{partnerName} isn&apos;t sharing screen time right now.</Text>
-        </Card>
-      ) : partnerTotal ? (
-        <Card>
-          <Text style={styles.owner}>{partnerName}&apos;s phone · Today</Text>
-          <Text style={styles.totalValue}>{formatDuration(partnerTotal.total_ms)}</Text>
-          <Text style={[styles.updated, partnerStale && { color: colors.warning }]}>
-            Last synced {timeAgo(partnerTotal.updated_at, now)}
-            {partnerStale ? ' · not current' : ''}
+      {mine.kind === 'no-access' ? (
+        <Card style={styles.setupCard}>
+          <Text style={styles.setupTitle}>Turn on Usage access</Text>
+          <Text style={styles.setupBody}>
+            Android only lets Bond read your screen time after you turn on &quot;Usage access&quot; for Bond. Bond only reads which apps were open and
+            for how long, never what you do inside them.
           </Text>
-          {partnerStale ? (
-            <Text style={styles.note}>
-              Android decides when {partnerName}&apos;s phone can send updates in the background. It updates right away
-              when they open Bond.
-            </Text>
-          ) : null}
-          {partnerApps.length > 0 ? (
-            <View style={styles.appList}>
-              <Text style={styles.listLabel}>Most used</Text>
-              {partnerApps.map((a, i) => (
-                <AppUsageRow
-                  key={a.package_name}
-                  name={a.app_name}
-                  iconUri={partnerIcons[a.package_name]}
-                  ms={a.foreground_ms}
-                  share={partnerTop > 0 ? a.foreground_ms / partnerTop : undefined}
-                  barColor={colors.partner}
-                  last={i === partnerApps.length - 1}
-                />
-              ))}
-            </View>
-          ) : null}
           <Button
-            label={`${partnerName}'s statistics`}
-            icon="stats-chart-outline"
-            variant="secondary"
+            label="Turn on Usage access"
             small
-            onPress={() => router.push({ pathname: '/screen-time-stats', params: { who: 'partner' } })}
-            style={styles.statsButton}
+            onPress={() => void requestUsageAccess('Screen Time reads which apps were open and for how long, never what you do inside them.')}
+            style={{ marginTop: spacing.md }}
           />
         </Card>
-      ) : (
-        <Card>
-          <Text style={styles.muted}>
-            No screen time from {partnerName} yet today. It appears once their phone has Usage access turned on and
-            sends today&apos;s first update. Earlier days are not shown here.
-          </Text>
+      ) : null}
+
+      <View style={styles.summaryRow}>
+        <SummaryCard who="You" label={label} value={mySummary} accent={colors.me} empty={mine.kind === 'no-access' ? 'Usage access off' : 'Loading…'} />
+        <SummaryCard
+          who={partnerName}
+          label={label}
+          value={partnerSummary}
+          accent={colors.partner}
+          empty={partner.sharing === false ? 'Not shared' : 'Loading…'}
+          warn={mode === 'day' && partnerStale}
+        />
+      </View>
+
+      {mode === 'week' ? (
+        <Card style={styles.chartCard}>
+          <View style={styles.chartHead}>
+            <Text style={styles.chartTitle}>This week</Text>
+            <Text style={styles.chartRange}>{rangeLabel(week.days)}</Text>
+          </View>
+          <View style={styles.chart}>
+            {week.days.map((d, i) => {
+              const me = week.mine?.[i] ?? 0;
+              const them = week.partner?.[i] ?? 0;
+              const isToday = i === 6;
+              return (
+                <View key={d} style={styles.chartCol} accessibilityLabel={`${d}: you ${formatDuration(me)}, ${partnerName} ${formatDuration(them)}`}>
+                  <View style={styles.bars}>
+                    <View style={[styles.bar, { height: `${Math.max(2, (me / maxDay) * 100)}%`, backgroundColor: colors.me, opacity: week.mine ? 1 : 0 }]} />
+                    <View style={[styles.bar, { height: `${Math.max(2, (them / maxDay) * 100)}%`, backgroundColor: colors.partner, opacity: week.partner ? 1 : 0 }]} />
+                  </View>
+                  <Text style={[styles.dayLabel, isToday && styles.dayLabelToday]}>{WEEKDAY[new Date(`${d}T12:00:00`).getDay()]}</Text>
+                </View>
+              );
+            })}
+          </View>
+          <View style={styles.legend}>
+            <Legend color={colors.me} label="You" />
+            <Legend color={colors.partner} label={week.partner ? partnerName : `${partnerName} (not shared)`} />
+          </View>
         </Card>
-      )}
+      ) : null}
+
+      <View style={styles.topHead}>
+        <Text style={styles.topTitle}>Top apps today</Text>
+        <Segmented
+          small
+          value={whose}
+          options={[
+            ['partner', partnerName],
+            ['me', 'You'],
+          ]}
+          onChange={(v) => setWhose(v as 'partner' | 'me')}
+        />
+      </View>
+      <Card style={{ paddingVertical: spacing.xs }}>
+        {apps.length === 0 ? (
+          <Text style={styles.muted}>
+            {whose === 'partner'
+              ? partner.sharing === false
+                ? `${partnerName} isn't sharing screen time right now.`
+                : `Nothing from ${partnerName} yet today.`
+              : mine.kind === 'ready'
+                ? 'No app use recorded yet today.'
+                : 'Your screen time shows here once Usage access is on.'}
+          </Text>
+        ) : (
+          apps.map((a, i) => (
+            <View key={a.pkg} style={[styles.appRow, i > 0 && styles.appDivider]}>
+              <AppIcon uri={icons[a.pkg]} size={32} />
+              <View style={{ flex: 1 }}>
+                <View style={styles.appTop}>
+                  <Text style={styles.appName} numberOfLines={1}>
+                    {a.name}
+                  </Text>
+                  <Text style={styles.appTime}>{formatDuration(a.ms)}</Text>
+                </View>
+                <View style={styles.track}>
+                  <View
+                    style={[
+                      styles.fill,
+                      { width: `${topMs > 0 ? Math.max(4, (a.ms / topMs) * 100) : 0}%`, backgroundColor: whose === 'partner' ? colors.partner : colors.me },
+                    ]}
+                  />
+                </View>
+              </View>
+            </View>
+          ))
+        )}
+      </Card>
+      {whose === 'partner' && partner.total ? (
+        <Text style={[styles.synced, partnerStale && { color: colors.warning }]}>
+          {partnerName}&apos;s phone last synced {timeAgo(partner.total.updated_at, partner.now)}
+          {partnerStale ? ' · not current' : ''}
+        </Text>
+      ) : whose === 'me' && mySharing !== null ? (
+        <Text style={styles.synced}>
+          {mySharing === false ? `Not shared with ${partnerName}` : lastSent ? `Shared with ${partnerName}` : `Shared with ${partnerName}`}
+        </Text>
+      ) : null}
+
+      <View style={styles.statsRow}>
+        <Button
+          label="Your statistics"
+          icon="stats-chart-outline"
+          variant="secondary"
+          small
+          onPress={() => router.push('/screen-time-stats')}
+          style={{ flex: 1 }}
+        />
+        <Button
+          label={`${partnerName}'s statistics`}
+          icon="stats-chart-outline"
+          variant="secondary"
+          small
+          disabled={partner.sharing === false || !partner.total}
+          onPress={() => router.push({ pathname: '/screen-time-stats', params: { who: 'partner' } })}
+          style={{ flex: 1 }}
+        />
+      </View>
     </Screen>
   );
 }
 
-function MineCard({
-  state,
-  sharing,
-  lastSent,
-  partnerName,
-  onStatistics,
+function rangeLabel(days: string[]): string {
+  if (days.length === 0) return '';
+  const a = new Date(`${days[0]}T12:00:00`);
+  const b = new Date(`${days[days.length - 1]}T12:00:00`);
+  const month = (d: Date) => d.toLocaleDateString(undefined, { month: 'short' });
+  return a.getMonth() === b.getMonth() ? `${month(a)} ${a.getDate()} – ${b.getDate()}` : `${month(a)} ${a.getDate()} – ${month(b)} ${b.getDate()}`;
+}
+
+function SummaryCard({
+  who,
+  label,
+  value,
+  accent,
+  empty,
+  warn,
 }: {
-  state: MyUsageState;
-  sharing: boolean | null;
-  lastSent: string | null;
-  partnerName: string;
-  onStatistics: () => void;
+  who: string;
+  label: string;
+  value: number | null;
+  accent: string;
+  empty: string;
+  warn?: boolean;
 }) {
   useThemeVersion();
-  const apps = state.kind === 'ready' ? state.usage.apps.slice(0, TOP_APPS) : [];
-  const icons = useAppIcons(apps.map((a) => a.packageName));
-
-  if (state.kind === 'loading') {
-    return (
-      <Card>
-        <Text style={styles.muted}>Loading your screen time…</Text>
-      </Card>
-    );
-  }
-  if (state.kind === 'needs-update' || state.kind === 'unsupported') {
-    return (
-      <SetupCard
-        icon="download-outline"
-        title="Needs the latest Bond"
-        body={
-          state.kind === 'unsupported'
-            ? 'Screen Time works on Android only.'
-            : 'This copy of Bond was installed before Screen Time support was added. Install the newest version of Bond on this phone to use it.'
-        }
-      />
-    );
-  }
-  if (state.kind === 'no-access') {
-    return (
-      <SetupCard
-        icon="time-outline"
-        title="Turn on Usage access"
-        body={`Android only lets Bond read screen time after you turn on "Usage access" for Bond in Settings. Bond only reads which apps were open and for how long. It can't see what you do inside them.`}
-        action={{
-          label: 'Turn on Usage access',
-          onPress: () => void requestUsageAccess('Screen Time reads which apps were open and for how long, never what you do inside them.'),
-        }}
-      />
-    );
-  }
-  if (state.kind === 'error') {
-    return (
-      <Card>
-        <Text style={styles.muted}>Couldn&apos;t read this phone&apos;s usage. Pull down to try again.</Text>
-      </Card>
-    );
-  }
-
-  const { usage } = state;
-  const top = usage.apps[0]?.foregroundMs ?? 0;
   return (
-    <Card>
-      <Text style={styles.owner}>Your phone · Today</Text>
-      <Text style={styles.totalValue}>{formatDuration(usage.totalMs)}</Text>
-      <Text style={styles.updated}>
-        {sharing === false
-          ? `Not shared with ${partnerName}. You can change this in Settings, Privacy.`
-          : lastSent
-            ? `Shared with ${partnerName}, last sent ${formatTime(lastSent)}`
-            : `Shared with ${partnerName}`}
-      </Text>
-
-
-      {apps.length === 0 ? (
-        <Text style={[styles.muted, { marginTop: spacing.md }]}>No app use recorded yet today.</Text>
+    <Card style={styles.summary}>
+      <View style={styles.summaryHead}>
+        <View style={[styles.dot, { backgroundColor: accent }]} />
+        <Text style={styles.summaryLabel} numberOfLines={1}>
+          {who} · {label}
+        </Text>
+      </View>
+      {value != null ? (
+        <Text style={[styles.summaryValue, warn && { color: colors.warning }]}>{formatDuration(value)}</Text>
       ) : (
-        <View style={styles.appList}>
-          <Text style={styles.listLabel}>Most used</Text>
-          {apps.map((a, i) => (
-            <AppUsageRow
-              key={a.packageName}
-              name={a.appName}
-              iconUri={icons[a.packageName]}
-              ms={a.foregroundMs}
-              share={top > 0 ? a.foregroundMs / top : undefined}
-              last={i === apps.length - 1}
-            />
-          ))}
-        </View>
+        <Text style={styles.summaryEmpty}>{empty}</Text>
       )}
-      <Button label="Your statistics" icon="stats-chart-outline" variant="secondary" small onPress={onStatistics} style={styles.statsButton} />
     </Card>
   );
 }
 
-function SetupCard({
-  icon,
-  title,
-  body,
-  action,
+function Legend({ color, label }: { color: string; label: string }) {
+  useThemeVersion();
+  return (
+    <View style={styles.legendItem}>
+      <View style={[styles.dot, { backgroundColor: color }]} />
+      <Text style={styles.legendText}>{label}</Text>
+    </View>
+  );
+}
+
+function Segmented({
+  value,
+  options,
+  onChange,
+  small,
 }: {
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  title: string;
-  body: string;
-  action?: { label: string; onPress: () => void };
+  value: string;
+  options: [string, string][];
+  onChange: (v: string) => void;
+  small?: boolean;
 }) {
   useThemeVersion();
   return (
-    <Card style={styles.setupCard}>
-      <View style={styles.setupIcon}>
-        <Ionicons name={icon} size={22} color={colors.primary} />
-      </View>
-      <Text style={styles.setupTitle}>{title}</Text>
-      <Text style={styles.setupBody}>{body}</Text>
-      {action ? <Button label={action.label} onPress={action.onPress} small style={{ marginTop: spacing.md }} /> : null}
-    </Card>
+    <View style={styles.segment}>
+      {options.map(([key, text]) => {
+        const on = value === key;
+        return (
+          <Pressable
+            key={key}
+            onPress={() => onChange(key)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: on }}
+            style={[styles.segmentItem, small && styles.segmentItemSmall, on && styles.segmentOn]}
+          >
+            <Text style={[styles.segmentText, on && styles.segmentTextOn]} numberOfLines={1}>
+              {text}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
 const styles = themedStyles(() => ({
-  muted: { ...font.small, color: colors.muted, lineHeight: 19 },
   refreshError: { ...font.small, color: colors.danger, marginBottom: spacing.md },
-  setupCard: { alignItems: 'center', paddingVertical: spacing.xl },
-  setupIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.md,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
-  },
-  setupTitle: { ...font.h3, color: colors.text, marginBottom: spacing.xs },
-  setupBody: { ...font.small, color: colors.subtext, textAlign: 'center', lineHeight: 19 },
-  owner: { ...font.small, fontWeight: '600', color: colors.subtext },
-  totalValue: { ...font.number, fontSize: 28, color: colors.text, marginTop: 2 },
-  updated: { ...font.small, color: colors.muted, marginTop: spacing.xs },
-  note: { ...font.small, color: colors.subtext, lineHeight: 18, marginTop: spacing.xs },
-  chart: { marginTop: spacing.lg },
-  appList: { marginTop: spacing.lg },
-  listLabel: { ...font.tiny, color: colors.muted, textTransform: 'uppercase', marginBottom: spacing.xs },
-  statsButton: { marginTop: spacing.lg, alignSelf: 'stretch' },
+  toggleRow: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: spacing.md },
+  segment: { flexDirection: 'row', backgroundColor: colors.track, borderRadius: radius.pill, padding: 3 },
+  segmentItem: { paddingHorizontal: spacing.lg, paddingVertical: 6, borderRadius: radius.pill, maxWidth: 140 },
+  segmentItemSmall: { paddingHorizontal: spacing.md, paddingVertical: 4 },
+  segmentOn: { backgroundColor: colors.card },
+  segmentText: { ...font.small, fontWeight: '600', color: colors.subtext },
+  segmentTextOn: { color: colors.text, fontWeight: '700' },
+  setupCard: { marginBottom: spacing.md },
+  setupTitle: { ...font.h3, color: colors.text },
+  setupBody: { ...font.small, color: colors.subtext, marginTop: spacing.xs, lineHeight: 19 },
+  summaryRow: { flexDirection: 'row', gap: spacing.md },
+  summary: { flex: 1, paddingVertical: spacing.md },
+  summaryHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  summaryLabel: { ...font.tiny, color: colors.subtext, letterSpacing: 0, flexShrink: 1 },
+  summaryValue: { ...font.h2, fontSize: 22, color: colors.text, marginTop: spacing.xs },
+  summaryEmpty: { ...font.small, color: colors.muted, marginTop: spacing.xs },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  chartCard: { marginTop: spacing.md },
+  chartHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  chartTitle: { ...font.small, fontWeight: '700', color: colors.text },
+  chartRange: { ...font.tiny, color: colors.muted, letterSpacing: 0 },
+  chart: { flexDirection: 'row', height: 140, marginTop: spacing.md, alignItems: 'flex-end' },
+  chartCol: { flex: 1, alignItems: 'center', height: '100%' },
+  bars: { flex: 1, flexDirection: 'row', alignItems: 'flex-end', gap: 3, width: '100%', justifyContent: 'center' },
+  bar: { width: 9, borderTopLeftRadius: 4, borderTopRightRadius: 4 },
+  dayLabel: { ...font.tiny, color: colors.muted, marginTop: 4, letterSpacing: 0 },
+  dayLabelToday: { color: colors.text, fontWeight: '800' },
+  legend: { flexDirection: 'row', gap: spacing.lg, marginTop: spacing.md, justifyContent: 'center' },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendText: { ...font.tiny, color: colors.subtext, letterSpacing: 0 },
+  topHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.xl, marginBottom: spacing.sm },
+  topTitle: { ...font.h3, color: colors.text },
+  muted: { ...font.small, color: colors.muted, lineHeight: 19, paddingVertical: spacing.md },
+  appRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md },
+  appDivider: { borderTopWidth: 1, borderTopColor: colors.border },
+  appTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  appName: { ...font.body, fontWeight: '600', color: colors.text, flex: 1, marginRight: spacing.sm },
+  appTime: { ...font.small, color: colors.subtext },
+  track: { height: 5, borderRadius: 3, backgroundColor: colors.track, marginTop: 6, overflow: 'hidden' },
+  fill: { height: 5, borderRadius: 3 },
+  synced: { ...font.tiny, color: colors.muted, marginTop: spacing.sm, letterSpacing: 0, textAlign: 'center' },
+  statsRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg, marginBottom: spacing.md },
 }));

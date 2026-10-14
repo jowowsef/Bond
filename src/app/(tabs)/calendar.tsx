@@ -3,7 +3,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, Text, View } from 'react-native';
 import { Button } from '@/components/Button';
-import { CalendarMonth } from '@/components/CalendarMonth';
+import { Avatar } from '@/components/Avatar';
+import { CalendarMonth, type DayMarks } from '@/components/CalendarMonth';
 import { Card } from '@/components/Card';
 import { HeaderActions } from '@/components/HeaderActions';
 import { Screen } from '@/components/Screen';
@@ -24,6 +25,7 @@ import {
   toKey,
   daysInMonth,
 } from '@/lib/calendarDates';
+import { tintForProfile } from '@/lib/avatar';
 import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
 
@@ -35,7 +37,7 @@ import { useCouple } from '@/state/couple';
 export default function CalendarTab() {
   useThemeVersion();
   const router = useRouter();
-  const { couple, userId, partnerProfile } = useCouple();
+  const { couple, userId, myProfile, partnerProfile } = useCouple();
   const partnerName = partnerProfile?.display_name ?? 'Your partner';
   const { events, cancelled, loading, error, reload } = useCalendar(couple?.id ?? null);
   const { refreshing, onRefresh } = usePullToRefresh(reload);
@@ -57,14 +59,28 @@ export default function CalendarTab() {
     return { y, m };
   });
 
-  // Days with events in the shown month (repeats expanded, cancelled ones left out).
+  // Days with events in the shown grid (with the days shown from the months
+  // around it), and whose: yours or your partner's. Repeats expanded,
+  // cancelled ones left out.
   const marked = useMemo(() => {
-    const from = toKey(view.y, view.m, 1);
-    const to = toKey(view.y, view.m, daysInMonth(view.y, view.m));
-    const set = new Set<string>();
-    for (const e of events) for (const d of occurrencesBetween(e, from, to, cancelled.get(e.id))) set.add(d);
-    return set;
-  }, [events, cancelled, view]);
+    const prevY = view.m === 1 ? view.y - 1 : view.y;
+    const prevM = view.m === 1 ? 12 : view.m - 1;
+    const nextY = view.m === 12 ? view.y + 1 : view.y;
+    const nextM = view.m === 12 ? 1 : view.m + 1;
+    const from = toKey(prevY, prevM, Math.max(1, daysInMonth(prevY, prevM) - 6));
+    const to = toKey(nextY, nextM, 14);
+    const map = new Map<string, DayMarks>();
+    for (const e of events) {
+      const mine = e.created_by === userId;
+      for (const d of occurrencesBetween(e, from, to, cancelled.get(e.id))) {
+        const m = map.get(d) ?? { me: false, partner: false };
+        if (mine) m.me = true;
+        else m.partner = true;
+        map.set(d, m);
+      }
+    }
+    return map;
+  }, [events, cancelled, view, userId]);
 
   const dayEvents = useMemo(
     () =>
@@ -99,11 +115,27 @@ export default function CalendarTab() {
     setView({ y, m });
     setSelected(today);
   }
+  // Tapping a dimmed day from the month before or after also shows that month.
+  function select(key: string) {
+    const { y, m } = parseKey(key);
+    if (y !== view.y || m !== view.m) setView({ y, m });
+    setSelected(key);
+  }
+
+  const dayLabel = selected === today ? `Today · ${shortDay(selected)}` : formatLongDate(selected);
 
   return (
     <Screen
-      title="Calendar"
-      right={<HeaderActions />}
+      title="Our calendar"
+      right={
+        <HeaderActions
+          before={
+            <Pressable onPress={add} accessibilityRole="button" accessibilityLabel="Add event" style={styles.addBtn}>
+              <Ionicons name="add" size={22} color="#fff" />
+            </Pressable>
+          }
+        />
+      }
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
     >
       {error ? (
@@ -114,6 +146,72 @@ export default function CalendarTab() {
           <Button label="Try again" small variant="secondary" onPress={() => void reload().catch(() => undefined)} style={{ alignSelf: 'flex-start' }} />
         </Card>
       ) : null}
+
+      <Card style={styles.monthCard}>
+        <CalendarMonth
+          year={view.y}
+          month={view.m}
+          today={today}
+          selected={selected}
+          marked={marked}
+          onSelect={select}
+          onPrev={() => shiftMonth(-1)}
+          onNext={() => shiftMonth(1)}
+          onToday={goToday}
+        />
+      </Card>
+
+      <View style={styles.dayHeader}>
+        <Text style={styles.dayTitle}>{dayLabel}</Text>
+        <Text style={styles.dayCount}>
+          {dayEvents.length === 0 ? '' : `${dayEvents.length} ${dayEvents.length === 1 ? 'event' : 'events'}`}
+        </Text>
+      </View>
+      {loading && events.length === 0 ? (
+        <Card>
+          <ActivityIndicator color={colors.primary} />
+        </Card>
+      ) : dayEvents.length === 0 ? (
+        <Card>
+          <Text style={styles.empty}>
+            {events.length === 0
+              ? `Nothing planned yet. Add a date night, an anniversary or anything you want to remember with ${partnerName}.`
+              : 'Nothing on this day.'}
+          </Text>
+          <Button label="Add event" icon="add" small variant="secondary" onPress={add} style={{ alignSelf: 'flex-start', marginTop: spacing.md }} />
+        </Card>
+      ) : (
+        <View style={styles.eventList}>
+          {dayEvents.map((e) => {
+            const mine = e.created_by === userId;
+            return (
+              <Pressable
+                key={e.id}
+                onPress={() => open(e, selected)}
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.eventCard, pressed && { opacity: 0.7 }]}
+              >
+                <View style={[styles.bar, { backgroundColor: mine ? colors.me : colors.partner }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.eventTitle} numberOfLines={1}>
+                    {e.title}
+                  </Text>
+                  <Text style={styles.eventMeta} numberOfLines={1}>
+                    {eventTimeText(e)} · {creator(e)}
+                    {e.location ? ` · ${e.location}` : ''}
+                  </Text>
+                </View>
+                {e.repeat !== 'none' ? <Ionicons name="repeat" size={16} color={colors.muted} /> : null}
+                <Avatar
+                  name={mine ? myProfile?.display_name : partnerProfile?.display_name}
+                  size={26}
+                  tint={tintForProfile(mine ? myProfile : partnerProfile)}
+                />
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
 
       {upcoming.length > 0 ? (
         <>
@@ -139,61 +237,14 @@ export default function CalendarTab() {
           </View>
         </>
       ) : null}
-
-      <Card style={styles.monthCard}>
-        <CalendarMonth
-          year={view.y}
-          month={view.m}
-          today={today}
-          selected={selected}
-          marked={marked}
-          onSelect={setSelected}
-          onPrev={() => shiftMonth(-1)}
-          onNext={() => shiftMonth(1)}
-          onToday={goToday}
-        />
-      </Card>
-
-      <View style={styles.dayHeader}>
-        <Text style={styles.dayTitle}>{selected === today ? 'Today' : formatLongDate(selected)}</Text>
-        <Button label="Add" icon="add" small onPress={add} />
-      </View>
-      <Card>
-        {loading && events.length === 0 ? (
-          <ActivityIndicator color={colors.primary} />
-        ) : dayEvents.length === 0 ? (
-          <Text style={styles.empty}>
-            {events.length === 0
-              ? `Nothing planned yet. Add a date night, an anniversary or anything you want to remember with ${partnerName}.`
-              : 'Nothing on this day.'}
-          </Text>
-        ) : (
-          dayEvents.map((e, i) => (
-            <Pressable
-              key={e.id}
-              onPress={() => open(e, selected)}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.eventRow, i > 0 && styles.divider, pressed && { opacity: 0.7 }]}
-            >
-              <View style={[styles.bar, { backgroundColor: e.created_by === userId ? colors.me : colors.partner }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.eventTitle} numberOfLines={1}>
-                  {e.title}
-                </Text>
-                <Text style={styles.eventMeta} numberOfLines={1}>
-                  {eventTimeText(e)}
-                  {e.location ? ` · ${e.location}` : ''} · by {creator(e)}
-                </Text>
-              </View>
-              {e.repeat !== 'none' ? <Ionicons name="repeat" size={16} color={colors.muted} /> : null}
-              <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-            </Pressable>
-          ))
-        )}
-      </Card>
       <View style={{ height: spacing.xl }} />
     </Screen>
   );
+}
+
+/** "Mon, Oct 12" */
+function shortDay(key: string): string {
+  return new Date(`${key}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
 const styles = themedStyles(() => ({
@@ -211,13 +262,34 @@ const styles = themedStyles(() => ({
   countdownLabel: { ...font.small, fontWeight: '700', color: colors.primary },
   countdownTitle: { ...font.h3, color: colors.text, marginTop: 2 },
   countdownDate: { ...font.small, color: colors.subtext, marginTop: 2 },
-  monthCard: { marginTop: spacing.lg },
+  addBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthCard: { marginTop: spacing.sm },
   dayHeader: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.xl, marginBottom: spacing.sm },
   dayTitle: { ...font.h3, color: colors.text, flex: 1 },
+  dayCount: { ...font.small, color: colors.muted },
+  eventList: { gap: spacing.sm },
+  eventCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+  },
   empty: { ...font.small, color: colors.muted, lineHeight: 19 },
   eventRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md },
   divider: { borderTopWidth: 1, borderTopColor: colors.border },
-  bar: { width: 4, alignSelf: 'stretch', borderRadius: 2 },
+  bar: { width: 4, alignSelf: 'stretch', borderRadius: 2, minHeight: 36 },
   eventTitle: { ...font.body, fontWeight: '700', color: colors.text },
   eventMeta: { ...font.small, color: colors.subtext, marginTop: 2 },
 }));
