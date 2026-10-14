@@ -160,6 +160,13 @@ async function fetchSnapshot(uid: string): Promise<{ ok: true; snapshot: Snapsho
   const { data: profiles, error: profileError } = await supabase.from('profiles').select('*');
   if (profileError) return { ok: false };
   const list = (profiles as Profile[]) ?? [];
+  // Every account has its own profile row, and RLS always lets me read it. If
+  // it's missing, these requests did NOT run as me: when the login token can't
+  // be refreshed (for example right after being offline), supabase-js sends
+  // requests without it, and RLS then returns nothing, which looks exactly like
+  // "no couple". Never treat that as "not paired" (it used to restart setup
+  // and turn sharing off); treat it as a failed check and try again later.
+  if (!list.some((p) => p.id === uid)) return { ok: false };
 
   return {
     ok: true,

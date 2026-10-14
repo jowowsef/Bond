@@ -176,7 +176,7 @@ export default function CalendarTab() {
         <Card>
           <Text style={styles.empty}>
             {events.length === 0
-              ? `Nothing planned yet. Add a date night, an anniversary or anything you want to remember with ${partnerName}.`
+              ? 'Nothing planned yet.'
               : 'Nothing on this day.'}
           </Text>
           <Button label="Add event" icon="add" small variant="secondary" onPress={add} style={{ alignSelf: 'flex-start', marginTop: spacing.md }} />

@@ -25,7 +25,14 @@ export async function checkSyncAllowed(): Promise<SyncVerdict> {
   if (!userId) return { kind: 'denied', reason: 'signed out' };
   const member = await supabase.from('couple_members').select('couple_id').eq('user_id', userId).maybeSingle();
   if (member.error) return { kind: 'unknown', reason: 'pairing check failed (offline?)' };
-  if (!member.data) return { kind: 'denied', reason: 'not paired' };
+  if (!member.data) {
+    // No row can also mean the request didn't run as me (the login token
+    // couldn't be refreshed, e.g. right after being offline): RLS then returns
+    // nothing. My own profile is always readable, so check it before deciding.
+    const me = await supabase.from('profiles').select('id').eq('id', userId).maybeSingle();
+    if (me.error || !me.data) return { kind: 'unknown', reason: 'sign-in not confirmed (offline?)' };
+    return { kind: 'denied', reason: 'not paired' };
+  }
   const coupleId = member.data.couple_id as string;
   const members = await supabase.from('couple_members').select('user_id').eq('couple_id', coupleId);
   if (members.error) return { kind: 'unknown', reason: 'partner check failed (offline?)' };

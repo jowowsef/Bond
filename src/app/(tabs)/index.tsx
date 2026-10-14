@@ -177,7 +177,7 @@ export default function Home() {
           <Card style={styles.settingUp}>
             <Ionicons name="sparkles-outline" size={18} color={colors.primary} />
             <Text style={styles.settingUpText}>
-              Your partner is still setting up. Their name and color will show here when they&apos;re done.
+              Your partner is still setting up.
             </Text>
           </Card>
         ) : null}

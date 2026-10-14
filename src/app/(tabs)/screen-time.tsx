@@ -27,7 +27,7 @@ const WEEKDAY = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
  *  - Day / Week switch.
  *  - Day: today's total for each of you. Week: each of you's daily average
  *    over the last 7 days, and a bar chart (you and your partner per day).
- *  - Top apps today, for your partner or you.
+ *  - Top apps today, for you or your partner.
  *  - Statistics (all apps, details) for each of you.
  * Yours comes from this phone (Android Usage access); your partner's is what
  * their phone uploaded, only while they share screen time.
@@ -42,7 +42,7 @@ export default function ScreenTimeTab() {
   const partner = usePartnerUsage(partnerId, dayKey());
   const week = useWeekUsage(partnerId);
   const [mode, setMode] = useState<'day' | 'week'>('week');
-  const [whose, setWhose] = useState<'partner' | 'me'>('partner');
+  const [whose, setWhose] = useState<'partner' | 'me'>('me');
   const [mySharing, setMySharing] = useState<boolean | null>(null);
   const [lastSent, setLastSent] = useState<string | null>(null);
 
@@ -133,8 +133,7 @@ export default function ScreenTimeTab() {
         <Card style={styles.setupCard}>
           <Text style={styles.setupTitle}>Turn on Usage access</Text>
           <Text style={styles.setupBody}>
-            Android only lets Bond read your screen time after you turn on &quot;Usage access&quot; for Bond. Bond only reads which apps were open and
-            for how long, never what you do inside them.
+            Needed to see your screen time. Bond only reads app names and time.
           </Text>
           <Button
             label="Turn on Usage access"
@@ -192,8 +191,8 @@ export default function ScreenTimeTab() {
           small
           value={whose}
           options={[
-            ['partner', partnerName],
             ['me', 'You'],
+            ['partner', partnerName],
           ]}
           onChange={(v) => setWhose(v as 'partner' | 'me')}
         />

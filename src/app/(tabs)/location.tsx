@@ -211,7 +211,7 @@ export default function LocationScreen() {
       };
     } else if (access.precise === false) {
       warning = {
-        text: 'Bond only has approximate location, so your position can be off by a few kilometers. Tap to allow precise location.',
+        text: 'Location is approximate. Tap to allow precise location.',
         onPress: openAppSettings,
       };
     } else if (diagnostics.watchError) {
@@ -357,7 +357,7 @@ export default function LocationScreen() {
           <Card style={{ paddingVertical: places.length ? spacing.xs : spacing.md }}>
             {places.length === 0 ? (
               <Text style={styles.placesEmpty}>
-                Save places like Home, School or Work to see when you&apos;re there and get directions. Saved on this phone only.
+                Save places like Home or School. Only on this phone.
               </Text>
             ) : (
               places.map((pl, i) => {
@@ -409,10 +409,6 @@ export default function LocationScreen() {
           </Pressable>
           {showDetails ? renderDetails() : null}
 
-          <Text style={styles.note}>
-            You can turn sharing on or off anytime. {partnerName} sees the change in Activity. Android permissions stay in your
-            control.
-          </Text>
         </ScrollView>
       </Animated.View>
 

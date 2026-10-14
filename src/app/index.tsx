@@ -28,6 +28,7 @@ export default function Index() {
   useThemeVersion();
   const { phase, profileStep, refresh, session, pairingSetup, unpairState } = useCouple();
   const [retrying, setRetrying] = useState(false);
+  const [stillOffline, setStillOffline] = useState(false);
 
   if (phase === 'loading') {
     return (
@@ -42,15 +43,28 @@ export default function Index() {
     return (
       <View style={styles.center}>
         <BondLogo size={72} layout="column" />
-        <Text style={styles.message}>Unable to connect. Check your internet connection and try again.</Text>
+        <Text style={styles.message}>Unable to connect. Check your internet.</Text>
+        {stillOffline && !retrying ? <Text style={styles.stillOffline}>Still can&apos;t connect. Try again in a moment.</Text> : null}
         <Button
           label="Try again"
           icon="refresh"
           loading={retrying}
           onPress={async () => {
+            if (retrying) return;
             setRetrying(true);
-            await refresh();
+            setStillOffline(false);
+            // Keep the spinner up for a moment, so the tap is visibly answered
+            // even when the check fails right away.
+            const started = Date.now();
+            try {
+              await refresh();
+            } catch {
+              // shown below
+            }
+            const wait = 900 - (Date.now() - started);
+            if (wait > 0) await new Promise((r) => setTimeout(r, wait));
             setRetrying(false);
+            setStillOffline(true); // only shows if this screen is still up
           }}
           style={styles.retry}
         />
@@ -99,4 +113,5 @@ const styles = themedStyles(() => ({
   },
   message: { ...font.body, color: colors.subtext, textAlign: 'center', marginTop: spacing.xl },
   retry: { marginTop: spacing.xl, alignSelf: 'stretch' },
+  stillOffline: { ...font.small, color: colors.warning, textAlign: 'center', marginTop: spacing.sm },
 }));

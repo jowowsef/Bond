@@ -42,6 +42,8 @@ export function CoupleAvatars({
   useThemeVersion();
   const heart = Math.round(size * 0.42);
   const t = useLoop(animated);
+  // The heart between you two beats gently once you are paired.
+  const beat = useLoop(!!partner && variant === 'apart');
 
   if (variant === 'together') {
     return (
@@ -94,9 +96,16 @@ export function CoupleAvatars({
           ))}
         </View>
         {partner ? (
-          <View style={[styles.heartSmall, { width: heart * 0.8, height: heart * 0.8, borderRadius: heart * 0.4 }]}>
+          <Animated.View
+            style={[
+              styles.heartSmall,
+              { width: heart * 0.8, height: heart * 0.8, borderRadius: heart * 0.4 },
+              // A soft heartbeat: two quick beats, then rest.
+              beat ? { transform: [{ scale: beat.interpolate({ inputRange: [0, 0.12, 0.24, 0.36, 0.5, 1], outputRange: [1, 1.18, 1, 1.12, 1, 1] }) }] } : null,
+            ]}
+          >
             <Image source={MARK} style={{ width: heart * 0.46, height: heart * 0.4 }} resizeMode="contain" />
-          </View>
+          </Animated.View>
         ) : null}
       </View>
 

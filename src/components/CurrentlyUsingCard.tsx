@@ -55,7 +55,7 @@ export function CurrentlyUsingCard({
     detail = '';
   } else if (s.kind === 'unavailable') {
     title = 'Not available yet';
-    detail = 'Needs a server update';
+    detail = '';
   } else if (s.kind === 'error') {
     title = "Couldn't check";
     detail = 'Pull down to try again';
@@ -64,7 +64,7 @@ export function CurrentlyUsingCard({
     detail = `${partnerName} has this off`;
   } else if (!partner.row) {
     title = 'Nothing detected yet';
-    detail = `Waiting for ${partnerName}'s phone`;
+    detail = '';
   } else {
     const age = partner.now - new Date(partner.row.checked_at).getTime();
     stale = age > CURRENT_APP_FRESH_MS;
@@ -75,7 +75,7 @@ export function CurrentlyUsingCard({
       detail = stale ? `Last detected ${ago} · not current` : `Last detected ${ago}`;
     } else {
       title = 'No app open';
-      detail = stale ? `Last update ${ago} · not current` : `Screen off or home screen · ${ago}`;
+      detail = stale ? ago : '';
     }
   }
   const muted = !showIcon || stale;

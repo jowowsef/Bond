@@ -76,7 +76,7 @@ export function BackgroundLocationStatus({
     icon = 'alert-circle-outline';
     warn = true;
     text =
-      'Only while Bond is open. Background updates are unavailable because Android location for Bond is not set to "Allow all the time".';
+      'Only while Bond is open. Set location to "Allow all the time" for updates when closed.';
     action = {
       label: 'Allow all the time',
       onPress: () => void offerBackgroundLocation(partnerName).then(() => read()),

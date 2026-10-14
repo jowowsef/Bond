@@ -377,7 +377,7 @@ export default function Settings() {
           <SwitchRow
             icon="phone-portrait-outline"
             label="Share the app I'm using"
-            sub={`${partnerName} sees the name of the app open on your phone and when it was last checked. Only the latest app, never a history, and nothing inside apps.`}
+            sub={`${partnerName} sees the app you have open. Never what's inside it.`}
             value={currentApp.switchValue}
             disabled={currentApp.switchDisabled}
             onChange={currentApp.toggle}
@@ -401,7 +401,7 @@ export default function Settings() {
           {currentApp.notificationsOff && currentApp.switchValue ? (
             <View style={styles.actionRow}>
               <Text style={styles.rowSub}>
-                Notifications are off for Bond, so Android hides the sharing notification. Sharing still works.
+                Notifications are off for Bond. Sharing still works.
               </Text>
               <Button label="Allow notifications" small variant="secondary" onPress={currentApp.allowNotifications} style={{ marginTop: spacing.sm }} />
             </View>
@@ -476,8 +476,8 @@ export default function Settings() {
                 label={`${possessive(partnerName)} day`}
                 sub={
                   dailySummary
-                    ? `One notification at about 9 PM with ${possessive(partnerName)} screen time and top app today (only if ${partnerName} shares screen time).`
-                    : `Off. Turn on for one notification each evening, never one per app.`
+                    ? 'One summary at about 9 PM'
+                    : 'Off'
                 }
                 value={dailySummary}
                 onChange={(v) => void onDailySummary(v)}
@@ -556,7 +556,7 @@ export default function Settings() {
           </Text>
         ) : null}
         <Text style={styles.note}>
-          Visibility controls what {partnerName} can see. You can turn any of these on or off yourself at any time.
+          You choose what {partnerName} can see.
         </Text>
 
           </>
@@ -599,9 +599,7 @@ export default function Settings() {
             />
           </Pressable>
         </Card>
-        <Text style={styles.note}>
-          Unpairing needs both partners to agree — one person can't disconnect the couple on their own.
-        </Text>
+        <Text style={styles.note}>Unpairing needs both of you to agree.</Text>
           </>
         ) : null}
 
@@ -624,8 +622,7 @@ export default function Settings() {
           </Pressable>
         </Card>
         <Text style={styles.note}>
-          {paired ? `${partnerName} only sees what your Privacy switches allow. ` : ''}Deleting your account permanently
-          removes your data from Bond.
+          Deleting your account removes your data from Bond.
         </Text>
 
         {canLogOut ? (
@@ -636,7 +633,7 @@ export default function Settings() {
                 <Row icon="log-out-outline" label={loggingOut ? 'Logging out…' : 'Log out'} last />
               </Pressable>
             </Card>
-            <Text style={styles.note}>Logging out keeps your account. Sign in again with the same email or Google account.</Text>
+            <Text style={styles.note}>Your account stays. Sign in again anytime.</Text>
           </>
         ) : null}
 
