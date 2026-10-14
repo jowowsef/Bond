@@ -40,6 +40,7 @@ export function AccountProtection({ userId }: { userId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
+  const [open, setOpen] = useState(false);
 
   const mounted = useRef(true);
   const passwordRef = useRef('');
@@ -278,13 +279,29 @@ export function AccountProtection({ userId }: { userId: string }) {
       <StatusBadge label="Not protected" tone="warning" />
     );
 
+  // Compact by default (one row with the status); opens on tap, and by
+  // itself while a step is in progress (email sent, password, re-check).
+  const busyStep = step === 'pending' || step === 'needs-password' || step === 'reauth';
+  const expanded = open || busyStep;
+
   return (
-    <Card>
-      <View style={styles.header}>
+    <Card style={styles.card}>
+      <Pressable
+        onPress={() => setOpen((v) => !v)}
+        disabled={busyStep}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        style={styles.header}
+      >
         <Ionicons name="shield-checkmark-outline" size={18} color={colors.primary} style={{ marginRight: spacing.sm }} />
         <Text style={styles.title}>Account protection</Text>
         {badge}
-      </View>
+        {!busyStep ? (
+          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.muted} style={{ marginLeft: spacing.xs }} />
+        ) : null}
+      </Pressable>
+      {expanded ? (
+        <View style={styles.body2}>
 
       {step === 'loading' ? <Text style={styles.body}>Checking…</Text> : null}
 
@@ -418,12 +435,16 @@ export function AccountProtection({ userId }: { userId: string }) {
           {info}
         </Text>
       ) : null}
+        </View>
+      ) : null}
     </Card>
   );
 }
 
 const styles = themedStyles(() => ({
-  header: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
+  card: { paddingVertical: spacing.md },
+  header: { flexDirection: 'row', alignItems: 'center' },
+  body2: { marginTop: spacing.sm },
   title: { ...font.h3, color: colors.text, flex: 1 },
   body: { ...font.small, color: colors.subtext, lineHeight: 19 },
   strong: { fontWeight: '700', color: colors.text },

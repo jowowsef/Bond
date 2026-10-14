@@ -125,9 +125,11 @@ export function CurrentlyUsingCard({
               </Text>
             ) : null}
           </View>
-          {showIcon ? (
-            <View style={[styles.timePill, stale && styles.timePillStale]}>
-              <Text style={[styles.timeText, stale && { color: colors.warning }]}>{stale ? `${ago} · old` : ago}</Text>
+          {/* Still in that app (a recent check): no time, the section says Live.
+              Only an old check shows when it was, so it's never read as current. */}
+          {showIcon && stale ? (
+            <View style={[styles.timePill, styles.timePillStale]}>
+              <Text style={[styles.timeText, { color: colors.warning }]}>{ago}</Text>
             </View>
           ) : null}
         </View>
