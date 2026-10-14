@@ -16,6 +16,15 @@ android {
   lintOptions {
     abortOnError false
   }
+  // Live build (-PbondLive=true): the manifest that also declares the
+  // optional accessibility service. The standard build has none of it.
+  sourceSets {
+    main {
+      if ((findProperty('bondLive') ?: 'false').toString() == 'true') {
+        manifest.srcFile 'src/live/AndroidManifest.xml'
+      }
+    }
+  }
 }
 
 dependencies {

@@ -53,7 +53,7 @@ type BondUsageNative = {
   /** Backup: restart the background service if it was on and the phone closed it. True = asked Android to start it. */
   resumeBackgroundService?(): boolean;
   /** Live Currently Using (optional accessibility service). */
-  getLiveStatus?(): { enabled: boolean; connected: boolean; lastChangeAt: number };
+  getLiveStatus?(): { available?: boolean; enabled: boolean; connected: boolean; lastChangeAt: number };
   /** details = Bond's own page when the phone offers it; returns what was opened. */
   openAccessibilitySettings?(details: boolean): 'details' | 'list';
   /** Android's "Let Bond always run in the background?" question; false = opened the list instead. */

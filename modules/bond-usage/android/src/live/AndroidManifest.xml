@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Bond Screen Time (read-only). Android merges this into the app manifest.
+
+  PACKAGE_USAGE_STATS: lets Bond read how long apps were in use. It is NOT
+  granted by installing the app: the phone's owner must turn on
+  "Usage access" for Bond in Android Settings. Until then Bond reads nothing.
+
+  <queries>: Android 11+ hides other apps by default. We only need to see
+  apps that appear in the launcher (to show their names) and home-screen
+  apps (so time on the home screen is not counted as app use).
+
+  "Currently Using" foreground service (CurrentAppService): runs only after
+  the person turned on Currently Using sharing (with its own Cancel / Confirm
+  consent) and granted Usage access, while paired. Android shows a persistent
+  notification the whole time. Type "specialUse": none of Android's specific
+  service types fits "check which app is open to share it with a partner the
+  person chose", and "dataSync" would be cut off after a few hours on newer
+  Android versions. Google Play asks for a short explanation of specialUse
+  services when the app is published; the subtype below is that explanation.
+-->
+<!--
+  LIVE build only (-PbondLive=true): the standard manifest (src/main) plus the
+  optional "Live Currently Using" accessibility service. Play Protect blocks
+  installing such an app from a file on some phones, so it is a separate APK.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+  <uses-permission
+      android:name="android.permission.PACKAGE_USAGE_STATS"
+      tools:ignore="ProtectedPermissions" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+  <!-- "Allow Bond to always run in the background?" (Android asks; the person decides). -->
+  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.HOME" />
+    </intent>
+  </queries>
+
+  <application>
+    <service
+        android:name="com.bond.usage.CurrentAppService"
+        android:exported="false"
+        android:foregroundServiceType="specialUse">
+      <property
+          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+          android:value="Consensual sharing of the foreground app name with the user's paired partner. Started only after the user opts in and grants Usage access; shows a persistent notification; checks Android usage events about every 20 seconds while the screen is on. The same service also shares battery level and charging state, and a daily screen time summary about every 15 minutes while the screen is on, only while the user has turned that sharing on." />
+    </service>
+    <!--
+      Optional "Live Currently Using" (BondAppWatchService): an accessibility
+      service the person turns on themselves in Settings > Accessibility. It
+      only learns which app's screen came to the front (no screen content).
+      Only Android can bind it (BIND_ACCESSIBILITY_SERVICE).
+    -->
+    <service
+        android:name="com.bond.usage.BondAppWatchService"
+        android:exported="true"
+        android:label="@string/bond_live_label"
+        android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+      <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService" />
+      </intent-filter>
+      <meta-data
+          android:name="android.accessibilityservice"
+          android:resource="@xml/bond_app_watch" />
+    </service>
+  </application>
+</manifest>

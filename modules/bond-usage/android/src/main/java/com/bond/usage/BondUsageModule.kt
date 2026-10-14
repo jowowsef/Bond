@@ -123,6 +123,7 @@ class BondUsageModule : Module() {
     Function("getLiveStatus") {
       val ctx = context
       mapOf(
+        "available" to BondAppWatchService.isAvailable(ctx),
         "enabled" to BondAppWatchService.isEnabled(ctx),
         "connected" to LiveAppWatch.connected,
         "lastChangeAt" to LiveAppWatch.changedAt.toDouble(),

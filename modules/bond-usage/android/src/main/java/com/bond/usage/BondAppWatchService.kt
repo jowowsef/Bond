@@ -148,6 +148,18 @@ class BondAppWatchService : AccessibilityService() {
       emptySet()
     }
 
+    /**
+     * Is Live mode part of this build? Only the Live APK declares the service
+     * (src/live/AndroidManifest.xml); the standard APK doesn't, so Android
+     * never lists it in Accessibility.
+     */
+    fun isAvailable(context: Context): Boolean = try {
+      context.packageManager.getServiceInfo(ComponentName(context, BondAppWatchService::class.java), 0)
+      true
+    } catch (_: Exception) {
+      false
+    }
+
     /** Has the phone's owner turned Bond's Live mode on in Android's Accessibility settings? */
     fun isEnabled(context: Context): Boolean {
       val enabled = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false

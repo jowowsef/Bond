@@ -18,7 +18,7 @@ import { installInfo } from './usageAccessFlow';
  * Bond explains first and opens that page. They can turn it off there anytime.
  *
  * Status:
- *  - 'unavailable': this copy of Bond is too old;
+ *  - 'unavailable': not in this APK (the standard APK, or an older Bond);
  *  - 'off':         not turned on in Android;
  *  - 'on':          on and running;
  *  - 'closed':      turned on, but the phone closed it (Android usually
@@ -29,7 +29,8 @@ export type LiveStatus = 'unavailable' | 'off' | 'on' | 'closed';
 export function readLiveStatus(): LiveStatus {
   try {
     const s = BondUsage?.getLiveStatus?.();
-    if (!s) return 'unavailable';
+    // The standard APK has no Live mode (only the Live APK declares it).
+    if (!s || s.available === false) return 'unavailable';
     if (!s.enabled) return 'off';
     return s.connected ? 'on' : 'closed';
   } catch {
