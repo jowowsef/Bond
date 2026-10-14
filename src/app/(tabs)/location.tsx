@@ -54,6 +54,7 @@ import {
 import { openAppSettings } from '@/lib/setupPermissions';
 import { colors, font, radius, shadow, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
+import { OfflineNote } from '@/components/OfflineNote';
 
 /**
  * LOCATION, map first and consent based.
@@ -229,8 +230,11 @@ export default function LocationScreen() {
 
       {/* Top: title and the usual header buttons, floating over the map. */}
       <View style={[styles.topBar, { top: insets.top + spacing.sm }]} pointerEvents="box-none">
-        <View style={styles.titleChip}>
-          <Text style={styles.titleText}>Location</Text>
+        <View>
+          <View style={styles.titleChip}>
+            <Text style={styles.titleText}>Location</Text>
+          </View>
+          <OfflineNote style={{ marginTop: spacing.sm, marginBottom: 0, backgroundColor: colors.card }} />
         </View>
         <View style={styles.actionsChip}>
           <HeaderActions />

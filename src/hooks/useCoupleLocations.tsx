@@ -22,6 +22,8 @@ import { supabase, uniqueTopic } from '@/lib/supabase';
 import { colors, useThemeVersion } from '@/lib/theme';
 import type { LocationRow, PrivacySettings } from '@/lib/types';
 import { useCouple } from '@/state/couple';
+import { assertSignedIn, onReconnect } from '@/lib/connectivity';
+import { readCached, writeCached } from '@/lib/offlineCache';
 
 /**
  * ONE shared, read-only source of both partners' latest locations.
@@ -88,6 +90,8 @@ function describe(
   now: number,
   movement: Movement,
   fromDevice: boolean,
+  /** false = offline: a saved position is never shown as live. */
+  online = true,
 ): PersonLocation {
   const base = { sharing, accuracyM: null, approximate: false, movement: null, fromDevice: false };
   if (!sharing) return { ...base, loc: null, status: 'off', statusLabel: 'Sharing off', place: null };
@@ -98,7 +102,7 @@ function describe(
   const age = now - new Date(loc.updated_at).getTime();
   const place = loc.place_name ?? null;
   const common = { sharing, loc, place, accuracyM, approximate, fromDevice };
-  if (age <= LIVE_MS) return { ...common, status: 'live', statusLabel: 'Live', movement };
+  if (age <= LIVE_MS && online) return { ...common, status: 'live', statusLabel: 'Live', movement };
   if (age <= STALE_MS) {
     return { ...common, status: 'recent', statusLabel: `Updated ${timeAgo(loc.updated_at, now)}`, movement: null };
   }
@@ -123,7 +127,7 @@ function movementBetween(prev: LocationRow, next: LocationRow): Movement {
 
 export function CoupleLocationsProvider({ children }: { children: React.ReactNode }) {
   useThemeVersion();
-  const { userId, partnerId, myProfile, partnerProfile, myAvatarUrl, partnerAvatarUrl } = useCouple();
+  const { userId, partnerId, myProfile, partnerProfile, myAvatarUrl, partnerAvatarUrl, online } = useCouple();
 
   const [consumers, setConsumers] = useState(0);
   const active = consumers > 0;
@@ -155,6 +159,8 @@ export function CoupleLocationsProvider({ children }: { children: React.ReactNod
     const seq = ++seqRef.current;
     const ids = pid ? [uid, pid] : [uid];
     try {
+      // Offline / not signed in yet: keep what is shown (an empty answer would look like "not shared").
+      await assertSignedIn();
       const [priv, locs] = await Promise.all([
         supabase.from('privacy_settings').select('*').in('user_id', ids),
         supabase.from('locations').select('*').in('user_id', ids),
@@ -183,6 +189,8 @@ export function CoupleLocationsProvider({ children }: { children: React.ReactNod
       setPrivacy(nextPrivacy);
       setLocations(nextLocations);
       setError(false);
+      // Saved for opening Bond offline (this account, this couple only).
+      void writeCached(uid, `couple-locations:${pid ?? 'none'}`, { privacy: nextPrivacy, locations: nextLocations });
     } catch {
       if (seq === seqRef.current && liveRef.current) setError(true);
     } finally {
@@ -198,6 +206,24 @@ export function CoupleLocationsProvider({ children }: { children: React.ReactNod
     prevPartnerRowRef.current = null;
     setLoading(true);
     setError(false);
+    if (!userId) return;
+    // The last saved positions at once (each shown with its own time; never as live).
+    let cancelled = false;
+    void readCached<{ privacy: Record<string, PrivacySettings>; locations: Record<string, LocationRow> }>(
+      userId,
+      `couple-locations:${partnerId ?? 'none'}`,
+    ).then((c) => {
+      if (!c || cancelled) return;
+      const ids = new Set([userId, partnerId].filter(Boolean) as string[]);
+      // Only our two accounts' rows, ever.
+      const keep = <T,>(rec: Record<string, T>) => Object.fromEntries(Object.entries(rec).filter(([k]) => ids.has(k)));
+      setPrivacy((cur) => (Object.keys(cur).length ? cur : keep(c.value.privacy)));
+      setLocations((cur) => (Object.keys(cur).length ? cur : keep(c.value.locations)));
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [userId, partnerId]);
 
   // The single subscription. Fully configured with .on() BEFORE .subscribe(),
@@ -212,7 +238,9 @@ export function CoupleLocationsProvider({ children }: { children: React.ReactNod
       .on('postgres_changes', { event: '*', schema: 'public', table: 'locations' }, () => void load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'privacy_settings' }, () => void load())
       .subscribe();
+    const offReconnect = onReconnect(() => void load());
     return () => {
+      offReconnect();
       liveRef.current = false;
       seqRef.current += 1; // invalidate any request still in flight
       void supabase.removeChannel(channel);
@@ -259,6 +287,7 @@ export function CoupleLocationsProvider({ children }: { children: React.ReactNod
       now,
       partnerMovement,
       false,
+      online,
     );
 
     // A pin's color is the person's OWN chosen avatar color (from their
@@ -314,6 +343,7 @@ export function CoupleLocationsProvider({ children }: { children: React.ReactNod
     load,
     acquire,
     release,
+    online,
   ]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

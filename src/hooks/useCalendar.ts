@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { fetchCalendar, type CalendarEvent, type EventException } from '@/lib/calendar';
+import { assertSignedIn, onReconnect } from '@/lib/connectivity';
+import { readCached, writeCached } from '@/lib/offlineCache';
 import { supabase, uniqueTopic } from '@/lib/supabase';
+import { useCouple } from '@/state/couple';
 
 /**
  * The couple's shared calendar, kept live:
@@ -22,18 +25,27 @@ export function useCalendar(coupleId: string | null) {
   const seq = useRef(0);
   const coupleRef = useRef(coupleId);
   coupleRef.current = coupleId;
+  const { userId: myId } = useCouple();
+  const myRef = useRef(myId);
+  useEffect(() => {
+    myRef.current = myId;
+  }, [myId]);
 
   const reload = useCallback(async () => {
     const id = coupleRef.current;
     if (!id) return;
     const mine = ++seq.current;
     try {
+      // Offline / not signed in yet: keep what is shown (an empty answer would look like "no events").
+      await assertSignedIn();
       const data = await fetchCalendar();
       if (mine !== seq.current || coupleRef.current !== id) return;
       // Belt and braces: only this couple's rows.
-      setEvents(data.events.filter((e) => e.couple_id === id));
+      const nextEvents = data.events.filter((e) => e.couple_id === id);
+      setEvents(nextEvents);
       setExceptions(data.exceptions);
       setError(null);
+      void writeCached(myRef.current, `calendar:${id}`, { events: nextEvents, exceptions: data.exceptions });
     } catch (e) {
       if (mine !== seq.current) return;
       setError((e as Error).message || 'Could not load the calendar.');
@@ -50,8 +62,17 @@ export function useCalendar(coupleId: string | null) {
     setError(null);
     setLoading(!!coupleId);
     if (!coupleId) return;
+    // The last saved calendar at once, until the server answers.
+    const shown = seq.current;
+    void readCached<{ events: CalendarEvent[]; exceptions: EventException[] }>(myRef.current, `calendar:${coupleId}`).then((c) => {
+      if (!c || seq.current !== shown || coupleRef.current !== coupleId) return;
+      setEvents(c.value.events.filter((e) => e.couple_id === coupleId));
+      setExceptions(c.value.exceptions);
+      setLoading(false);
+    });
     const run = () => void reload().catch(() => undefined);
     run();
+    const offReconnect = onReconnect(run);
     // New and changed rows: only this couple's. Deletions can't be filtered
     // by Realtime (a delete carries only the row id), so any calendar delete
     // triggers a re-read, which the database limits to this couple.
@@ -67,6 +88,7 @@ export function useCalendar(coupleId: string | null) {
       if (s === 'active') run();
     });
     return () => {
+      offReconnect();
       sub.remove();
       void supabase.removeChannel(channel);
     };

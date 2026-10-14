@@ -8,6 +8,7 @@ import { useCurrentAppSharing } from '@/hooks/useCurrentAppSharing';
 import { CURRENT_APP_FRESH_MS, type CurrentAppRow, type CurrentAppSetting } from '@/lib/currentApp';
 import { timeAgo } from '@/lib/format';
 import { colors, font, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
+import { useCouple } from '@/state/couple';
 
 /**
  * HOME "Right now": what my PARTNER is using (their phone's latest check), for my partner only (their own row;
@@ -39,6 +40,7 @@ export function CurrentlyUsingCard({
 }) {
   useThemeVersion();
   const mine = useCurrentAppSharing(userId, partnerName);
+  const { online } = useCouple();
   const pkg = partner.row?.package_name ?? null;
   const icons = useAppIcons(pkg ? [pkg] : []);
 
@@ -67,7 +69,8 @@ export function CurrentlyUsingCard({
     detail = '';
   } else {
     const age = partner.now - new Date(partner.row.checked_at).getTime();
-    stale = age > CURRENT_APP_FRESH_MS;
+    // Offline, the saved app may be old even if its check was recent: never "is using" then.
+    stale = age > CURRENT_APP_FRESH_MS || !online;
     const ago = timeAgo(partner.row.checked_at, partner.now);
     if (partner.row.app_name) {
       title = partner.row.app_name;

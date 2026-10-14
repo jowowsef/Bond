@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { addDays, dayKey, startOfDay } from '@/lib/format';
 import { getUsageSupport, hasUsageAccess, readDayUsage } from '@/lib/screenTime';
 import { supabase } from '@/lib/supabase';
+import { assertSignedIn, onReconnect } from '@/lib/connectivity';
+import { readCached, writeCached } from '@/lib/offlineCache';
+import { useCouple } from '@/state/couple';
 
 /**
  * The last 7 days of screen time (oldest first, today last), for the week
@@ -21,6 +24,12 @@ export type WeekUsage = {
 export function useWeekUsage(partnerId: string | null): WeekUsage {
   const [state, setState] = useState<Omit<WeekUsage, 'reload'>>({ days: lastSevenDays(), mine: null, partner: null, loading: true });
 
+  const { userId: myId } = useCouple();
+  const myRef = useRef(myId);
+  useEffect(() => {
+    myRef.current = myId;
+  }, [myId]);
+
   const reload = useCallback(async () => {
     const days = lastSevenDays();
     const today = startOfDay();
@@ -38,7 +47,12 @@ export function useWeekUsage(partnerId: string | null): WeekUsage {
     }
 
     let partner: number[] | null = null;
-    if (partnerId) {
+    let partnerKnown = false;
+    const signedIn = await assertSignedIn().then(
+      () => true,
+      () => false,
+    );
+    if (partnerId && signedIn) {
       const [privacy, rows] = await Promise.all([
         supabase.from('privacy_settings').select('share_screen_time').eq('user_id', partnerId).maybeSingle(),
         supabase.from('screen_time_daily').select('day, total_ms').eq('user_id', partnerId).gte('day', days[0]).lte('day', days[6]),
@@ -48,6 +62,15 @@ export function useWeekUsage(partnerId: string | null): WeekUsage {
         const byDay = new Map(((rows.data as { day: string; total_ms: number }[]) ?? []).map((r) => [r.day, r.total_ms]));
         partner = days.map((d) => byDay.get(d) ?? 0);
       }
+      if (!privacy.error && !rows.error) {
+        partnerKnown = true;
+        void writeCached(myRef.current, `partner-week:${partnerId}`, { days, partner });
+      }
+    }
+    if (partnerId && !partnerKnown) {
+      // Offline: the last saved week, only for the same 7 days.
+      const c = await readCached<{ days: string[]; partner: number[] | null }>(myRef.current, `partner-week:${partnerId}`);
+      if (c && c.value.days.join() === days.join()) partner = c.value.partner;
     }
     setState({ days, mine, partner, loading: false });
   }, [partnerId]);
@@ -55,7 +78,11 @@ export function useWeekUsage(partnerId: string | null): WeekUsage {
   useEffect(() => {
     // Next tick: the first read starts after this render.
     const t = setTimeout(() => void reload(), 0);
-    return () => clearTimeout(t);
+    const off = onReconnect(() => void reload());
+    return () => {
+      clearTimeout(t);
+      off();
+    };
   }, [reload]);
 
   return { ...state, reload };

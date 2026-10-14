@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase, uniqueTopic } from '@/lib/supabase';
 import type { ActivityLog } from '@/lib/types';
+import { assertSignedIn, onReconnect } from '@/lib/connectivity';
+import { readCached, writeCached } from '@/lib/offlineCache';
+import { useCouple } from '@/state/couple';
 
 type FeedState = {
   logs: ActivityLog[];
@@ -19,7 +22,21 @@ export function useActivityFeed(limit = 30): FeedState {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
+  const { userId: myId, couple } = useCouple();
+  const coupleId = couple?.id ?? null;
+  const cacheKey = `activity:${coupleId ?? 'none'}:${limit}`;
+
   const reload = useCallback(async () => {
+    // Offline / not signed in yet: keep what is shown (an empty answer would look like "no activity").
+    const signedIn = await assertSignedIn().then(
+      () => true,
+      () => false,
+    );
+    if (!signedIn) {
+      setError(true);
+      setLoading(false);
+      return;
+    }
     const { data, error: err } = await supabase
       .from('activity_logs')
       .select('*')
@@ -29,21 +46,34 @@ export function useActivityFeed(limit = 30): FeedState {
       setError(true);
     } else {
       setError(false);
-      setLogs((data as ActivityLog[]) ?? []);
+      const next = (data as ActivityLog[]) ?? [];
+      setLogs(next);
+      void writeCached(myId, cacheKey, next);
     }
     setLoading(false);
-  }, [limit]);
+  }, [limit, myId, cacheKey]);
 
   useEffect(() => {
-    void reload();
+    // The last saved activity at once (only this account, this couple), until the server answers.
+    let answered = false;
+    void readCached<ActivityLog[]>(myId, cacheKey).then((c) => {
+      if (!c || answered) return;
+      setLogs((cur) => (cur.length ? cur : c.value.filter((l) => !coupleId || l.couple_id === coupleId)));
+      setLoading(false);
+    });
+    void reload().then(() => {
+      answered = true;
+    });
+    const offReconnect = onReconnect(() => void reload());
     const channel = supabase
       .channel(uniqueTopic(`activity-feed-${limit}`))
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity_logs' }, () => void reload())
       .subscribe();
     return () => {
+      offReconnect();
       void supabase.removeChannel(channel);
     };
-  }, [reload, limit]);
+  }, [reload, limit, myId, cacheKey, coupleId]);
 
   return { logs, loading, error, reload };
 }

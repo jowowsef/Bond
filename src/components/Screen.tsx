@@ -2,6 +2,7 @@ import React from 'react';
 import { ScrollView, View, type RefreshControlProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { HEADER_SIDE, HEADER_TOP, HeaderBar, HeaderTitle } from '@/components/HeaderBar';
+import { OfflineNote } from '@/components/OfflineNote';
 import { colors, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 
 /**
@@ -46,11 +47,13 @@ export function Screen({
           refreshControl={refreshControl}
         >
           {header}
+          <OfflineNote />
           {children}
         </ScrollView>
       ) : (
         <View style={[styles.content, styles.flex]}>
           {header}
+          <OfflineNote />
           {children}
         </View>
       )}

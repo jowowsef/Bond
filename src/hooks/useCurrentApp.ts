@@ -9,6 +9,7 @@ import {
   type CurrentAppRow,
   type CurrentAppSetting,
 } from '@/lib/currentApp';
+import { assertSignedIn, onReconnect } from '@/lib/connectivity';
 import { supabase, uniqueTopic } from '@/lib/supabase';
 
 /**
@@ -54,6 +55,8 @@ export function usePartnerCurrentApp(
     const id = partnerRef.current;
     if (!id) return;
     const mine = ++seq.current;
+    // Offline / not signed in yet: keep what is shown (an empty answer would look like "not shared").
+    await assertSignedIn();
     const s = await readCurrentAppSetting(id);
     if (mine !== seq.current || partnerRef.current !== id) return; // a newer request is on its way
     if (s.kind === 'error') throw new Error('current app setting failed to load');
@@ -102,6 +105,7 @@ export function usePartnerCurrentApp(
     }
     const run = () => void reload().catch(() => {});
     run();
+    const offReconnect = onReconnect(run);
     const channel = supabase
       .channel(uniqueTopic(`current-app-watch-${partnerId}`))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'current_app', filter: `user_id=eq.${partnerId}` }, run)
@@ -111,6 +115,7 @@ export function usePartnerCurrentApp(
       if (st === 'active') run();
     });
     return () => {
+      offReconnect();
       sub.remove();
       void supabase.removeChannel(channel);
     };

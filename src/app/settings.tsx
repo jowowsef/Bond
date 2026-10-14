@@ -38,6 +38,9 @@ import { requestUsageAccess } from '@/lib/usageAccessFlow';
 import { colors, font, radius, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import type { PrivacySettings } from '@/lib/types';
 import { useCouple } from '@/state/couple';
+import { assertSignedIn, onReconnect } from '@/lib/connectivity';
+import { readCached, writeCached } from '@/lib/offlineCache';
+import { OfflineNote } from '@/components/OfflineNote';
 
 /**
  * SETTINGS (opened from the gear in each tab's header).
@@ -139,13 +142,28 @@ export default function Settings() {
 
   const loadPrivacy = useCallback(async () => {
     if (!userId) return;
+    // Offline / not signed in yet: keep the saved switches (an empty answer would look like all off).
+    const signedIn = await assertSignedIn().then(
+      () => true,
+      () => false,
+    );
+    if (!signedIn) return;
     const { data } = await supabase.from('privacy_settings').select('*').eq('user_id', userId).maybeSingle();
-    if (data) setPrivacy(data as PrivacySettings);
+    if (data) {
+      setPrivacy(data as PrivacySettings);
+      void writeCached(userId, 'my-privacy', data as PrivacySettings);
+    }
   }, [userId]);
 
   useEffect(() => {
+    if (!userId) return;
+    // The last saved switches at once (offline), until the server answers.
+    void readCached<PrivacySettings>(userId, 'my-privacy').then((c) => {
+      if (c && c.value.user_id === userId) setPrivacy((cur) => cur ?? c.value);
+    });
     void loadPrivacy();
-  }, [loadPrivacy]);
+    return onReconnect(() => void loadPrivacy());
+  }, [userId, loadPrivacy]);
 
   const unpairPending = outgoingRequests.some((r) => r.action === 'unpair');
 
@@ -292,6 +310,7 @@ export default function Settings() {
     <SafeAreaView style={styles.screen} edges={['top']}>
       <StackHeader title="Settings" />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <OfflineNote />
         {/* Profile */}
         <SectionHeader title="Profile" />
         <Card>

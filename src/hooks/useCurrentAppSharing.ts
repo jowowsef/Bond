@@ -15,6 +15,7 @@ import { getUsageSupport, hasUsageAccess } from '@/lib/screenTime';
 import { requestUsageAccess } from '@/lib/usageAccessFlow';
 import { getNotificationState, requestNotifications } from '@/lib/setupPermissions';
 import { useCouple } from '@/state/couple';
+import { assertSignedIn } from '@/lib/connectivity';
 
 /**
  * The real state of MY "Currently Using" sharing, from the saved setting,
@@ -76,8 +77,18 @@ export function useCurrentAppSharing(userId: string | null, partnerName: string)
   const reload = useCallback(async () => {
     await readLocal();
     if (!userId) return;
+    // Offline / not signed in yet: say it couldn't be checked (an empty answer would look like "off").
+    const signedIn = await assertSignedIn().then(
+      () => true,
+      () => false,
+    );
+    if (!signedIn) {
+      setSetting((cur) => cur ?? { kind: 'error' });
+      return;
+    }
     const s = await readCurrentAppSetting(userId);
-    setSetting(s);
+    // A failed check keeps the last known answer on screen.
+    setSetting((cur) => (s.kind === 'error' && cur ? cur : s));
     // Sharing was turned on (through the dialog) before consent was
     // remembered: remember it now. A pairing's default-on is not consent and
     // is left as it is.

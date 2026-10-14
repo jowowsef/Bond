@@ -4,6 +4,9 @@ import { AppState } from 'react-native';
 import { getLocalBattery, isChargingState, syncBattery, type LocalBattery } from '@/lib/battery';
 import { supabase, uniqueTopic } from '@/lib/supabase';
 import type { BatteryStatus } from '@/lib/types';
+import { assertSignedIn, onReconnect } from '@/lib/connectivity';
+import { readCached, writeCached } from '@/lib/offlineCache';
+import { useCouple } from '@/state/couple';
 
 const SYNC_INTERVAL_MS = 15 * 60 * 1000; // 15 min while the app is open
 /** Older than this = show as possibly stale. */
@@ -111,6 +114,11 @@ export function usePartnerBattery(partnerId: string | null): {
   const partnerRef = useRef(partnerId);
   partnerRef.current = partnerId;
   const seq = useRef(0);
+  const { userId: myId } = useCouple();
+  const myRef = useRef(myId);
+  useEffect(() => {
+    myRef.current = myId;
+  }, [myId]);
 
   /**
    * Read the newest reading the partner's phone has sent. Used on open, on
@@ -122,15 +130,21 @@ export function usePartnerBattery(partnerId: string | null): {
     const id = partnerRef.current;
     if (!id) return;
     const mine = ++seq.current;
+    // Offline / not signed in yet: keep what is shown (an empty answer would look like "not shared").
+    await assertSignedIn();
     const [row, privacy] = await Promise.all([
       supabase.from('battery_status').select('*').eq('user_id', id).maybeSingle(),
       supabase.from('privacy_settings').select('share_battery').eq('user_id', id).maybeSingle(),
     ]);
     if (mine !== seq.current || partnerRef.current !== id) return;
     if (row.error) throw row.error;
-    setBattery((row.data as BatteryStatus) ?? null);
-    if (!privacy.error) setSharing(!!(privacy.data as { share_battery?: boolean } | null)?.share_battery);
+    const nextBattery = (row.data as BatteryStatus) ?? null;
+    const nextSharing = privacy.error ? null : !!(privacy.data as { share_battery?: boolean } | null)?.share_battery;
+    setBattery(nextBattery);
+    if (nextSharing !== null) setSharing(nextSharing);
     setNow(Date.now());
+    // Saved for opening Bond offline (only this account, about this partner).
+    void writeCached(myRef.current, `partner-battery:${id}`, { battery: nextBattery, sharing: nextSharing });
   }, []);
 
   useEffect(() => {
@@ -138,8 +152,16 @@ export function usePartnerBattery(partnerId: string | null): {
     setBattery(null);
     setSharing(null);
     if (!partnerId) return;
+    // Show the last saved reading at once (with its own time), until the server answers.
+    const shown = seq.current;
+    void readCached<{ battery: BatteryStatus | null; sharing: boolean | null }>(myRef.current, `partner-battery:${partnerId}`).then((c) => {
+      if (!c || seq.current !== shown || partnerRef.current !== partnerId) return;
+      setBattery(c.value.battery);
+      setSharing(c.value.sharing);
+    });
     const run = () => void reload().catch(() => {});
     run();
+    const offReconnect = onReconnect(run);
     const channel = supabase
       .channel(uniqueTopic(`battery-watch-${partnerId}`))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'battery_status', filter: `user_id=eq.${partnerId}` }, run)
@@ -150,6 +172,7 @@ export function usePartnerBattery(partnerId: string | null): {
       if (st === 'active') run();
     });
     return () => {
+      offReconnect();
       appSub.remove();
       void supabase.removeChannel(channel);
     };

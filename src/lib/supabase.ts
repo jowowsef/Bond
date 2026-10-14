@@ -35,6 +35,27 @@ export const supabase = createClient(
 );
 
 /**
+ * The session Supabase saved on this phone (the same one it signs requests
+ * with), read straight from storage. Used ONLY when Supabase can't load it
+ * because it is offline with an expired access token: then Bond still knows
+ * who is signed in on this phone and can show that account's saved data. It
+ * never makes a request as that user (Supabase refreshes the token itself
+ * once online), and it is null after signing out.
+ */
+export async function readStoredSession(): Promise<import('@supabase/supabase-js').Session | null> {
+  if (!isSupabaseConfigured) return null;
+  try {
+    // supabase-js's default storage key for this project.
+    const raw = await AsyncStorage.getItem(`sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`);
+    if (!raw) return null;
+    const s = JSON.parse(raw) as import('@supabase/supabase-js').Session;
+    return s?.user?.id && s.refresh_token ? s : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * A separate, throw-away Supabase client that keeps its session ONLY in memory
  * (never saved, never refreshed, never shared with the app's client). Used to
  * let Supabase verify a fresh Google sign-in for re-authentication without

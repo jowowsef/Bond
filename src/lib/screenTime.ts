@@ -63,7 +63,11 @@ export type ScreenTimeSyncResult =
   | { status: 'needs-update' }
   | { status: 'error'; message: string };
 
-type LastSync = { at: string; day: string };
+/** userId: the account it was for (older records don't have it). */
+type LastSync = { at: string; day: string; userId?: string };
+
+/** After being offline, days not fully sent yet are sent too, at most this many back (the 7-day chart). */
+const MAX_CATCH_UP_DAYS = 7;
 
 /** When this phone last uploaded screen time successfully (null if never). */
 export async function getLastScreenTimeSync(): Promise<LastSync | null> {
@@ -146,23 +150,40 @@ async function runSync(userId: string): Promise<ScreenTimeSyncResult> {
   if (getUsageSupport() !== 'ready') return { status: 'needs-update' };
   if (!hasUsageAccess()) return { status: 'no-access' };
   try {
+    // Offline / not signed in yet: an empty answer would look like "not
+    // sharing". Fail instead, so it is sent again later (nothing is lost:
+    // the totals are read from Android's own usage log each time).
+    const { data: auth } = await supabase.auth.getSession();
+    if (!auth.session) throw new Error('offline: not signed in right now');
     const { data: privacy, error } = await supabase
       .from('privacy_settings')
       .select('share_screen_time')
       .eq('user_id', userId)
       .maybeSingle();
     if (error) throw error;
-    if (!privacy?.share_screen_time) return { status: 'not-sharing' };
+    if (!privacy?.share_screen_time) {
+      // Sharing is off: days from now on are never sent later as catch-up.
+      await AsyncStorage.removeItem(LAST_SYNC_KEY).catch(() => undefined);
+      return { status: 'not-sharing' };
+    }
 
     const now = new Date();
     const nowIso = now.toISOString();
     const last = await getLastScreenTimeSync();
 
-    // First sync of a new day: finish yesterday's totals (the last upload
-    // yesterday may have been hours before midnight).
-    const yesterday = addDays(startOfDay(now), -1);
-    if (last && last.day === dayKey(yesterday)) {
-      await uploadDay(userId, yesterday, await readDayUsage(yesterday), nowIso);
+    // First sync of a new day (also after being offline for days): finish
+    // the day of the last upload (it may have been hours before midnight)
+    // and send every day since then, up to a week back, from Android's own
+    // usage log. Only for the same account, and only if sharing stayed on
+    // (turning it off forgets the last upload, see above).
+    const today = startOfDay(now);
+    if (last && (!last.userId || last.userId === userId)) {
+      const [y, m, d] = last.day.split('-').map(Number);
+      const lastDay = new Date(y, m - 1, d);
+      const oldest = addDays(today, -MAX_CATCH_UP_DAYS);
+      for (let day = lastDay < oldest ? oldest : lastDay; day < today; day = addDays(day, 1)) {
+        await uploadDay(userId, day, await readDayUsage(day), nowIso);
+      }
     }
 
     await uploadDay(userId, now, await readDayUsage(now), nowIso);
@@ -172,7 +193,7 @@ async function runSync(userId: string): Promise<ScreenTimeSyncResult> {
     await supabase.from('app_usage_daily').delete().eq('user_id', userId).lt('day', cutoff);
     await supabase.from('screen_time_daily').delete().eq('user_id', userId).lt('day', cutoff);
     try {
-      await AsyncStorage.setItem(LAST_SYNC_KEY, JSON.stringify({ at: nowIso, day: dayKey(now) }));
+      await AsyncStorage.setItem(LAST_SYNC_KEY, JSON.stringify({ at: nowIso, day: dayKey(now), userId } satisfies LastSync));
     } catch {
       // only used for display
     }

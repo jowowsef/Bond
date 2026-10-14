@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { supabase, uniqueTopic } from '@/lib/supabase';
 import type { AppUsageDay, ScreenTimeDay } from '@/lib/types';
+import { assertSignedIn, onReconnect } from '@/lib/connectivity';
+import { readCached, writeCached } from '@/lib/offlineCache';
+import { useCouple } from '@/state/couple';
 
 /** A partner reading older than this gets an "out of date" note. */
 export const PARTNER_STALE_MS = 60 * 60 * 1000;
@@ -37,11 +40,24 @@ export function usePartnerUsage(partnerId: string | null, day: string): PartnerU
   const [now, setNow] = useState(Date.now());
   const current = useRef({ partnerId, day });
   current.current = { partnerId, day };
+  const { userId: myId } = useCouple();
+  const myRef = useRef(myId);
+  useEffect(() => {
+    myRef.current = myId;
+  }, [myId]);
 
   const reload = useCallback(async () => {
     if (!partnerId) {
       setLoading(false);
       return;
+    }
+    // Offline / not signed in yet: keep what is shown (an empty answer would look like "not shared").
+    try {
+      await assertSignedIn();
+    } catch (e) {
+      setLoading(false);
+      setError(true);
+      throw e;
     }
     const [privacyRes, totalRes, appsRes] = await Promise.all([
       supabase.from('privacy_settings').select('share_screen_time').eq('user_id', partnerId).maybeSingle(),
@@ -65,8 +81,11 @@ export function usePartnerUsage(partnerId: string | null, day: string): PartnerU
       // makes sure an earlier day's row can never be shown as today's).
       const totalRow = (totalRes.data as ScreenTimeDay | null) ?? null;
       const appRows = ((appsRes.data as AppUsageDay[]) ?? []).filter((r) => r.day === day);
-      setTotal(isSharing === false || !totalRow || totalRow.day !== day ? null : totalRow);
-      setApps(isSharing === false ? [] : appRows);
+      const nextTotal = isSharing === false || !totalRow || totalRow.day !== day ? null : totalRow;
+      const nextApps = isSharing === false ? [] : appRows;
+      setTotal(nextTotal);
+      setApps(nextApps);
+      void writeCached(myRef.current, `partner-usage:${partnerId}:${day}`, { sharing: isSharing, total: nextTotal, apps: nextApps });
     }
     setLoading(false);
     setNow(Date.now());
@@ -83,8 +102,26 @@ export function usePartnerUsage(partnerId: string | null, day: string): PartnerU
       setLoading(false);
       return;
     }
-    const run = () => void reload().catch(() => {});
+    // Today's last saved summary at once (shown with its own time), until the server answers.
+    let answered = false;
+    void readCached<{ sharing: boolean | null; total: ScreenTimeDay | null; apps: AppUsageDay[] }>(
+      myRef.current,
+      `partner-usage:${partnerId}:${day}`,
+    ).then((c) => {
+      if (!c || answered || current.current.partnerId !== partnerId || current.current.day !== day) return;
+      setSharing(c.value.sharing);
+      setTotal(c.value.total);
+      setApps(c.value.apps);
+      setLoading(false);
+    });
+    const run = () =>
+      void reload()
+        .then(() => {
+          answered = true;
+        })
+        .catch(() => {});
     run();
+    const offReconnect = onReconnect(run);
     const channel = supabase
       .channel(uniqueTopic(`partner-usage-${partnerId}`))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'screen_time_daily', filter: `user_id=eq.${partnerId}` }, run)
@@ -94,10 +131,11 @@ export function usePartnerUsage(partnerId: string | null, day: string): PartnerU
       if (s === 'active') run();
     });
     return () => {
+      offReconnect();
       sub.remove();
       void supabase.removeChannel(channel);
     };
-  }, [partnerId, reload]);
+  }, [partnerId, day, reload]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 60_000);

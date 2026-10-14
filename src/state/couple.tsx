@@ -16,7 +16,9 @@ import { stopCurrentAppService } from '@/lib/currentAppServiceControl';
 import { clearUnpairRecord, noteUnpaired, readUnpairRecord, runUnpairReset } from '@/lib/unpairReset';
 import { signedAvatarUrls } from '@/lib/profilePhoto';
 import { fetchPendingApprovals } from '@/lib/requests';
-import { supabase, uniqueTopic } from '@/lib/supabase';
+import { notifyReconnected } from '@/lib/connectivity';
+import { clearOfflineCache } from '@/lib/offlineCache';
+import { readStoredSession, supabase, uniqueTopic } from '@/lib/supabase';
 import type { ApprovalRequest, Couple, CoupleMember, Profile } from '@/lib/types';
 
 /**
@@ -90,6 +92,11 @@ type CoupleContextValue = {
    * checking or when not paired.
    */
   pairingSetup: PairingSetupState;
+  /**
+   * false while Bond can't reach the server (its last check failed): screens
+   * then show saved data with a small "offline" note. Bond retries by itself.
+   */
+  online: boolean;
   /**
    * Finish one setup step for the current couple. False when it was refused
    * (leaving sharing setup before the new pairing's sharing reset succeeded).
@@ -188,6 +195,9 @@ export function CoupleProvider({ children }: { children: React.ReactNode }) {
   const [loadFailed, setLoadFailed] = useState(false);
   /** The saved session couldn't be restored because of an error (e.g. offline with an expired token). */
   const [authError, setAuthError] = useState(false);
+  /** The last server check worked (false = offline / not reachable right now). */
+  const [online, setOnline] = useState(true);
+  const onlineRef = useRef(true);
   const [requests, setRequests] = useState<ApprovalRequest[]>([]);
   /** Signed avatar URLs keyed by storage path. */
   const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({});
@@ -290,14 +300,32 @@ export function CoupleProvider({ children }: { children: React.ReactNode }) {
 
   // --- Restore the saved session, then follow sign-in / sign-out ---
   useEffect(() => {
-    supabase.auth.getSession().then(({ data, error }) => {
+    void (async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (!data.session && error) {
+        // Couldn't restore it (usually offline with an expired access token).
+        // Supabase keeps the session saved and refreshes it once online, so
+        // keep the same account on this phone and open with its saved data;
+        // no request is made as this user until Supabase has refreshed it.
+        const stored = await readStoredSession();
+        if (stored) {
+          setSession(stored);
+          setAuthError(false);
+          setAuthChecked(true);
+          return;
+        }
+      }
       setSession(data.session);
       // An error here (not just "no session") means we couldn't restore it —
       // Supabase keeps it saved, so show "Unable to connect", not onboarding.
       setAuthError(!data.session && !!error);
       setAuthChecked(true);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    })();
+    const { data: sub } = supabase.auth.onAuthStateChange((event, newSession) => {
+      // A missing session only counts when it really ended (signed out, or
+      // Supabase gave up on it). Offline, Supabase reports "no session" while
+      // it can't refresh the token; that must not sign this phone out.
+      if (!newSession && event !== 'SIGNED_OUT') return;
       setSession(newSession);
       if (newSession) setAuthError(false);
     });
@@ -340,7 +368,17 @@ export function CoupleProvider({ children }: { children: React.ReactNode }) {
   const applyServer = useCallback(async (uid: string): Promise<boolean> => {
     const result = await fetchSnapshot(uid);
     if (userIdRef.current && userIdRef.current !== uid) return false;
-    if (!result.ok) return false;
+    if (!result.ok) {
+      onlineRef.current = false;
+      setOnline(false);
+      return false;
+    }
+    if (!onlineRef.current) {
+      // Back online: let screens reload their partner data right away.
+      onlineRef.current = true;
+      setOnline(true);
+      notifyReconnected();
+    }
     const before = knownCoupleRef.current;
     const next = result.snapshot;
     knownCoupleRef.current = { uid, coupleId: next.couple?.id ?? null, full: next.members.length >= 2 };
@@ -432,6 +470,15 @@ export function CoupleProvider({ children }: { children: React.ReactNode }) {
     await refreshRequests();
   }, [applyServer, refreshRequests]);
 
+  // --- While offline: check again every 15 s (only while Bond is open) ---
+  useEffect(() => {
+    if (online || !userId) return;
+    const t = setInterval(() => {
+      if (AppState.currentState === 'active') void refresh();
+    }, 15_000);
+    return () => clearInterval(t);
+  }, [online, userId, refresh]);
+
   // --- Re-check when the app comes back to the foreground ---
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
@@ -471,6 +518,9 @@ export function CoupleProvider({ children }: { children: React.ReactNode }) {
   const resetSession = useCallback(async () => {
     const uid = userIdRef.current;
     if (uid) await AsyncStorage.removeItem(cacheKey(uid)).catch(() => undefined);
+    // Saved partner data of this account (offline cache), so nothing of it
+    // can show for whoever signs in next on this phone.
+    if (uid) await clearOfflineCache(uid);
     // No background location for an account that is signed out / deleted.
     await stopBackgroundLocation();
     await stopCurrentAppService();
@@ -482,6 +532,8 @@ export function CoupleProvider({ children }: { children: React.ReactNode }) {
     setKnownFor(null);
     setLoadFailed(false);
     setAuthError(false);
+    onlineRef.current = true;
+    setOnline(true);
     setRequests([]);
     setAvatarUrls({});
     knownCoupleRef.current = null;
@@ -543,6 +595,7 @@ export function CoupleProvider({ children }: { children: React.ReactNode }) {
     refreshRequests,
     resetSession,
     pairingSetup,
+    online,
     advancePairingSetup,
     ensurePairingReset,
     unpairState,
