@@ -75,10 +75,10 @@ export default function Home() {
         if (AppState.currentState !== 'active') return;
         tick += 1;
         const r = reloadersRef.current;
-        void r.app().catch(() => {}); // every 30 s
-        if (tick % 2 === 0) void r.battery().catch(() => {}); // every minute
-        if (tick % 4 === 0) void r.usage().catch(() => {}); // every 2 minutes
-      }, 30_000);
+        void r.app().catch(() => {}); // every 10 s: the partner's app, even if the live update dropped
+        if (tick % 6 === 0) void r.battery().catch(() => {}); // every minute
+        if (tick % 12 === 0) void r.usage().catch(() => {}); // every 2 minutes
+      }, 10_000);
       return () => clearInterval(t);
     }, []),
   );

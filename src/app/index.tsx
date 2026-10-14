@@ -1,7 +1,8 @@
 import { Redirect } from '@/components/Redirect';
 import React, { useState } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { BondLogo } from '@/components/BondLogo';
+import { PulseLogo } from '@/components/PulseLogo';
 import { Button } from '@/components/Button';
 import { colors, font, spacing, themedStyles, useThemeVersion } from '@/lib/theme';
 import { useCouple } from '@/state/couple';
@@ -32,8 +33,7 @@ export default function Index() {
   if (phase === 'loading') {
     return (
       <View style={styles.center}>
-        <BondLogo size={72} layout="column" />
-        <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
+        <PulseLogo size={72} />
       </View>
     );
   }
@@ -64,8 +64,7 @@ export default function Index() {
     if (profileStep === null || pairingSetup === 'unknown') {
       return (
         <View style={styles.center}>
-          <BondLogo size={72} layout="column" />
-          <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
+          <PulseLogo size={72} />
         </View>
       );
     }

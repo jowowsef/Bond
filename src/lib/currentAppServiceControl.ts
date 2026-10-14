@@ -30,7 +30,7 @@ export function currentAppGeneration(): number {
 /** Checks while the screen is on (Android may stretch this when saving battery). */
 export const CHECK_INTERVAL_MS = 2_000;
 /** "Still the same app" refresh, so the partner's "Checked" time stays honest. */
-export const HEARTBEAT_MS = 10 * 60_000;
+export const HEARTBEAT_MS = 2 * 60_000;
 
 /** False on builds made before the service existed (then the older checks still work). */
 export function currentAppServiceAvailable(): boolean {

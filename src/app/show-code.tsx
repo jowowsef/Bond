@@ -2,13 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { Redirect } from '@/components/Redirect';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Pressable, Share, Text, View } from 'react-native';
+import { AppState, Pressable, Share, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BackHeader } from '@/components/BackHeader';
 import { GearButton } from '@/components/GearButton';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { CoupleAvatars } from '@/components/CoupleAvatars';
+import { PulseLogo } from '@/components/PulseLogo';
 import { tintForProfile } from '@/lib/avatar';
 import { getNotificationState, requestNotifications } from '@/lib/setupPermissions';
 import { createCouple, displayCode, inviteExpired, inviteExpiresText, refreshInviteCode } from '@/lib/pairing';
@@ -129,7 +130,7 @@ export default function ShowCode() {
           </View>
         ) : !couple || generating ? (
           <View style={styles.centerBlock}>
-            <ActivityIndicator color={colors.primary} />
+            <PulseLogo size={56} />
             <Text style={styles.waitText}>Generating your code…</Text>
           </View>
         ) : (
@@ -139,6 +140,7 @@ export default function ShowCode() {
                 me={{ name: myProfile?.display_name, url: myAvatarUrl, tint: tintForProfile(myProfile) }}
                 partner={null}
                 size={76}
+                waiting={!expired}
               />
               <Text style={styles.title} accessibilityLiveRegion="polite">
                 {expired ? 'This code has expired' : 'Waiting for your partner…'}
